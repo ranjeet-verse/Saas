@@ -10,7 +10,7 @@ router = APIRouter(
     tags=["Tenant"]
 )
 
-@router.post('/', status_code=status.HTTP_201_CREATED)
+@router.post('/', status_code=status.HTTP_201_CREATED, response_model=schemas.TenantOut)
 def create_tenant(tenant: schemas.CreateTenant, db: Session = Depends(get_db)):
 
     existing_tenant = db.query(models.Tenant).filter(models.Tenant.name == tenant.name).first()
