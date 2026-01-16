@@ -7,7 +7,7 @@ from ..models import models
 from ..core import utils, oauth2
 
 router = APIRouter(
-    tags=["Auth"]
+    tags=["Tenant"]
 )
 
 @router.post('/login', response_model=Token)
@@ -30,7 +30,7 @@ def auth_user(db: Session = Depends(get_db), user_credentials: OAuth2PasswordReq
     }
 
 
-@router.post('/', response_model=Token, status_code=status.HTTP_201_CREATED)
+@router.post('/admin', response_model=Token, status_code=status.HTTP_201_CREATED)
 def admin(data: SignupRequest, db: Session = Depends(get_db)):
 
     existing_tentant = db.query(models.Tenant).filter(models.Tenant.company_name == data.company_name).first()

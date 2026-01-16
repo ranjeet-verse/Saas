@@ -51,3 +51,22 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     user_id: int
     tenant_id: int
+
+
+class Me(BaseModel):
+    id: int
+    name: str
+    email: EmailStr
+    role: str
+    tenant_id: int
+
+class ProjectCreate(BaseModel):
+    name: str
+    description: str
+
+class ProjectOut(ProjectCreate):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

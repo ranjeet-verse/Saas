@@ -16,6 +16,9 @@ def new_user(user: schemas.UserSignup, db:Session = Depends(get_db), current_use
 
     existin_user = db.query(models.User).filter(models.User.email == user.email,
                                                 models.User.tenant_id == current_user.tenant_id).first()
+    
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You're Not Allowed To Perform This Action")
 
     if existin_user:
         raise HTTPException(status_code=409, detail="User already exists")

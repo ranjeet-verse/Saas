@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends
 from .database import engine
 from .models import models
 
-from .routers import tenant, user, auth
+from .routers import user, auth, me, projects
 
 
 models.Base.metadata.create_all(bind=engine)
@@ -14,6 +14,7 @@ app = FastAPI()
 def home():
     return "Hello Here resides my Saas"
 
-app.include_router(tenant.router)
 app.include_router(user.router)
 app.include_router(auth.router)
+app.include_router(me.router)
+app.include_router(projects.router)
