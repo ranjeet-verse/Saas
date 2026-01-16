@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, Depends, status, HTTPException, Query
 from ..schema import schemas
 from ..models import models
 from ..core import oauth2
 from ..database import get_db
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
+from sqlalchemy import or_
 
 router = APIRouter(
     prefix="/projects",
@@ -13,32 +14,82 @@ router = APIRouter(
 
 
 @router.get('/', response_model=List[schemas.ProjectOut])
-def see_projects(db: Session = Depends(get_db), current_user: models.User = Depends(oauth2.get_current_user)):
+def see_projects(limit: int = Query(default=10, ge=1, le=100),
+                offset: int = Query(default=0, ge=0),
+                search: Optional[str] = None,
+                db: Session = Depends(get_db),
+                current_user: models.User = Depends(oauth2.get_current_user)):
 
-    projects = db.query(models.Project).filter(models.Project.tenant_id == current_user.tenant_id).all()
+    query = db.query(models.Project).filter(models.Project.tenant_id == current_user.tenant_id)
+
+    if search:
+        query = query.filter(or_(
+                models.Project.name.ilike(f"%{search}%"),
+                models.Project.description.ilike(f"%{search}%")))
+    
+    projects = query.limit(limit).offset(offset).all()
 
     return projects
 
-@router.get('/{id}', response_model=List[schemas.ProjectOut])
-def see_projects(id: int, db: Session = Depends(get_db), current_user: models.User = Depends(oauth2.get_current_user)):
 
-    project = db.query(models.Project).filter(models.Project.tenant_id == current_user.tenant_id, models.Project.id == id).first()
+@router.get('/{id}', response_model=schemas.ProjectOut)
+def see_project(id: int, db: Session = Depends(get_db), current_user: models.User = Depends(oauth2.get_current_user)):
+
+    project = db.query(models.Project).filter(
+        models.Project.tenant_id == current_user.tenant_id, 
+        models.Project.id == id
+    ).first()
 
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Project with id {id} not found")
 
     return project
 
+
 @router.post('/', response_model=schemas.ProjectOut, status_code=status.HTTP_201_CREATED)
 def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db), current_user: models.User = Depends(oauth2.get_current_user)):
      
-
-    new_project = models.Project(**project.model_dump(), tenant_id = current_user.tenant_id)
+    new_project = models.Project(**project.model_dump(), tenant_id=current_user.tenant_id)
     db.add(new_project)
     db.commit()
     db.refresh(new_project)
 
     return new_project
 
-@router.put('/{id}')
-def update_porject()
+
+@router.put('/{id}', response_model=schemas.ProjectOut)
+def update_project(id: int, project: schemas.ProjectUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(oauth2.get_current_user)):
+
+    project_query = db.query(models.Project).filter(
+        models.Project.id == id, 
+        models.Project.tenant_id == current_user.tenant_id
+    )
+
+    if not project_query.first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, 
+                            detail=f"Project with id {id} was not found")
+    
+    project_query.update(project.model_dump(exclude_unset=True), synchronize_session=False)
+    db.commit()
+    
+    return project_query.first()
+
+
+@router.delete('/{id}', status_code=status.HTTP_204_NO_CONTENT)
+def delete_project(id: int, db: Session = Depends(get_db), current_user: models.User = Depends(oauth2.get_current_user)):
+
+    project_query = db.query(models.Project).filter(
+        models.Project.id == id, 
+        models.Project.tenant_id == current_user.tenant_id
+    )
+    
+    project = project_query.first()
+    
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, 
+                            detail=f"Project with id {id} was not found")
+
+    project_query.delete(synchronize_session=False)
+    db.commit()
+    
+    return None  
