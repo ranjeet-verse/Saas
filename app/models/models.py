@@ -4,7 +4,6 @@ from ..database import Base
 from sqlalchemy import func
 
 
-
 class Tenant(Base):
     __tablename__ = "tenant"
 
@@ -13,6 +12,9 @@ class Tenant(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     users = relationship("User", back_populates="tenant")
+    projects = relationship("Project", back_populates="tenant")
+    tasks = relationship("Task", back_populates="tenant")
+
 
 class User(Base):
     __tablename__ = "users"
@@ -36,8 +38,21 @@ class Project(Base):
     name = Column(String, nullable=False)
     description = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False )
+    tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False)
 
-    tenant = relationship("Tenant")
+    tenant = relationship("Tenant", back_populates="projects")
+    tasks = relationship("Task", back_populates="project", cascade="all, delete-orphan")
 
-    
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+
+    tenant = relationship("Tenant", back_populates="tasks")
+    project = relationship("Project", back_populates="tasks")

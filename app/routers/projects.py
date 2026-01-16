@@ -93,3 +93,26 @@ def delete_project(id: int, db: Session = Depends(get_db), current_user: models.
     db.commit()
     
     return None  
+
+
+@router.post('/{project_id}/task', response_model=schemas.TaskOut, status_code=status.HTTP_201_CREATED)
+def create_task(project_id: int,
+    task: schemas.TaskCreate, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(oauth2.get_current_user)):
+
+    project = db.query(models.Project).filter(models.Project.id == project_id,
+                models.Project.tenant_id == current_user.tenant_id).first()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    new_task = models.Task(**task.model_dump(), 
+                        project_id = project.id, tenant_id = project.tenant_id)
+
+    db.add(new_task)
+    db.commit()
+    db.refresh(new_task)
+    return new_task
+
+

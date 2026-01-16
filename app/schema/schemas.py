@@ -74,3 +74,16 @@ class ProjectOut(ProjectCreate):
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+
+class TaskCreate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+
+class TaskOut(BaseModel):
+    id: int
+    title: str
+    description: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
