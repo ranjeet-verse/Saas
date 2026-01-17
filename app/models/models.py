@@ -2,6 +2,10 @@ from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from ..database import Base
 from sqlalchemy import func
+import uuid
+from sqlalchemy.dialects.postgresql import UUID
+
+
 
 
 class Tenant(Base):
@@ -56,3 +60,23 @@ class Task(Base):
 
     tenant = relationship("Tenant", back_populates="tasks")
     project = relationship("Project", back_populates="tasks")
+
+class Invitation(Base):
+    __tablename__ = "invitations"
+
+    id = Column(Integer, primary_key=True)
+    token = Column(UUID(as_uuid=True), unique=True, default=uuid.uuid4, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    invited_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False)
+    role = Column(String, default="member", nullable=False)
+    is_used = Column(Boolean, nullable=False, default=False)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    accepted_at = Column(DateTime, nullable=True)
+    accepted_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    tenant = relationship("Tenant")
+    invited_by = relationship("User", foreign_keys=[invited_by_user_id])
+    accepted_by = relationship("User", foreign_keys=[accepted_by_user_id])

@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends
 from .database import engine
 from .models import models
 
-from .routers import user, auth, me, projects
+from .routers import user, auth, me, projects, invite
 
 
 models.Base.metadata.create_all(bind=engine)
@@ -18,3 +18,4 @@ app.include_router(user.router)
 app.include_router(auth.router)
 app.include_router(me.router)
 app.include_router(projects.router)
+app.include_router(invite.router)

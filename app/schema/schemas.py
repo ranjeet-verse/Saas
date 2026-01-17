@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Literal
+import uuid
 
 
 class CreateTenant(BaseModel):
@@ -87,3 +88,33 @@ class TaskOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+class CreateInvite(BaseModel):
+    email: EmailStr
+    name: str
+    role: Literal['member', 'admin'] = "member"
+
+class InviteOut(BaseModel):
+    id: int
+    token: uuid.UUID
+    name: str
+    email: EmailStr
+    role: str
+    is_used: bool
+    expires_at: datetime
+    created_at: datetime
+    invited_by_user_id: int
+
+    class Config:
+        from_attributes = True
+
+
+class AcceptInvite(BaseModel):
+    name: Optional[str]
+    email: EmailStr
+    password: str
+
+class TokenWithUser(BaseModel):  
+    user: UserOut
+    access_token: str
+    token_type: str
