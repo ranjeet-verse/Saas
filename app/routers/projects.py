@@ -105,7 +105,7 @@ def create_task(project_id: int,
                 models.Project.tenant_id == current_user.tenant_id).first()
 
     if not project:
-        raise HTTPException(status_code=404, detail="Not Found")
+        raise HTTPException(status_code=404, detail="Project Not Found")
 
     new_task = models.Task(**task.model_dump(), 
                         project_id = project.id, tenant_id = project.tenant_id)
@@ -116,3 +116,56 @@ def create_task(project_id: int,
     return new_task
 
 
+@router.get('/{project_id}/task', response_model=List[schemas.TaskOut])
+def see_tasks(project_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(oauth2.get_current_user)):
+
+    project = db.query(models.Project).filter(models.Project.id == project_id, models.Project.tenant_id == current_user.tenant_id).first()
+
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="Project not found")
+    
+    task = db.query(models.Task).filter(models.Task.project_id == project_id, models.Task.tenant_id == current_user.tenant_id).all()
+
+    return task
+
+
+
+@router.put('/{project_id}/task/{id}', response_model=schemas.TaskOut)
+def update_task(project_id: int,id: int, task: schemas.TaskCreate, db: Session = Depends(get_db), current_user: models.User = Depends(oauth2.get_current_user)):
+
+    project = db.query(models.Project).filter(models.Project.id == project_id , models.Project.tenant_id == current_user.tenant_id).first()
+
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, 
+                            detail="Project Not Found")
+    
+    task_query = db.query(models.Task).filter(models.Task.id == id, models.Task.project_id == project_id, models.Task.tenant_id == current_user.tenant_id)
+
+    if not task_query.first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, 
+                            detail="Task not found")
+
+    task_query.update(task.model_dump(exclude_unset=True), synchronize_session=False)
+    db.commit()
+    return task_query.first()
+
+@router.delete('/{project_id}/task/{id}', status_code=status.HTTP_204_NO_CONTENT)
+def delete_task(id: int, project_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(oauth2.get_current_user)):
+
+    project = db.query(models.Project).filter(models.Project.id == project_id, models.Project.tenant_id == current_user.tenant_id).first()
+
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, 
+                            detail="Project Not Found")
+    
+    task = db.query(models.Task).filter(models.Task.id == id, models.Task.project_id == project_id, models.Task.tenant_id == current_user.tenant_id)
+
+    if not task.first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, 
+                            detail="Task Not Found")
+    
+    task.delete(synchronize_session=False)
+    db.commit()
+
+    return None
