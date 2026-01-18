@@ -1,11 +1,9 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from ..database import Base
 from sqlalchemy import func
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
-
-
 
 
 class Tenant(Base):
@@ -18,6 +16,7 @@ class Tenant(Base):
     users = relationship("User", back_populates="tenant")
     projects = relationship("Project", back_populates="tenant")
     tasks = relationship("Task", back_populates="tenant")
+    invitations = relationship("Invitation", back_populates="tenant")
 
 
 class User(Base):
@@ -30,7 +29,7 @@ class User(Base):
     role = Column(String, nullable=False, default="member")
     is_active = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False, index=True)
 
     tenant = relationship("Tenant", back_populates="users")
 
@@ -42,7 +41,7 @@ class Project(Base):
     name = Column(String, nullable=False)
     description = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False, index=True)
 
     tenant = relationship("Tenant", back_populates="projects")
     tasks = relationship("Task", back_populates="project", cascade="all, delete-orphan")
@@ -55,28 +54,29 @@ class Task(Base):
     title = Column(String, nullable=False)
     description = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False)
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
 
     tenant = relationship("Tenant", back_populates="tasks")
     project = relationship("Project", back_populates="tasks")
 
+
 class Invitation(Base):
     __tablename__ = "invitations"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
     token = Column(UUID(as_uuid=True), unique=True, default=uuid.uuid4, nullable=False, index=True)
-    name = Column(String, nullable=False)
-    email = Column(String, nullable=False)
-    invited_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False)
+    name = Column(String, nullable=True)
+    email = Column(String, nullable=False, index=True)
+    invited_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False, index=True)
     role = Column(String, default="member", nullable=False)
-    is_used = Column(Boolean, nullable=False, default=False)
-    expires_at = Column(DateTime, nullable=False)
+    is_used = Column(Boolean, nullable=False, default=False, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    accepted_at = Column(DateTime, nullable=True)
-    accepted_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    accepted_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
-    tenant = relationship("Tenant")
+    tenant = relationship("Tenant", back_populates="invitations")
     invited_by = relationship("User", foreign_keys=[invited_by_user_id])
     accepted_by = relationship("User", foreign_keys=[accepted_by_user_id])

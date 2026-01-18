@@ -91,13 +91,11 @@ class TaskOut(BaseModel):
 
 class CreateInvite(BaseModel):
     email: EmailStr
-    name: str
     role: Literal['member', 'admin'] = "member"
 
 class InviteOut(BaseModel):
     id: int
     token: uuid.UUID
-    name: str
     email: EmailStr
     role: str
     is_used: bool
@@ -110,8 +108,7 @@ class InviteOut(BaseModel):
 
 
 class AcceptInvite(BaseModel):
-    name: Optional[str]
-    email: EmailStr
+    name: str  # Required field
     password: str
 
 class TokenWithUser(BaseModel):  

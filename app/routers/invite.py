@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from ..database import get_db
 import uuid
 from ..schema import schemas
-from ..core import oauth2, utils
+from ..core import oauth2, utils, email
 from ..models import models
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
@@ -15,7 +15,10 @@ router = APIRouter(
 )
 
 @router.post('/', response_model=schemas.InviteOut)
-def invite_user(invite: schemas.CreateInvite, db: Session = Depends(get_db), current_user: models.User = Depends(oauth2.get_current_user)):
+def invite_user(invite: schemas.CreateInvite, 
+                background_tasks: BackgroundTasks , 
+                db: Session = Depends(get_db), 
+                current_user: models.User = Depends(oauth2.get_current_user)):
 
     if current_user.role not in ["admin"]:
         raise HTTPException(
@@ -39,7 +42,7 @@ def invite_user(invite: schemas.CreateInvite, db: Session = Depends(get_db), cur
                             detail="An active invitation already exists for this email")
     
     new_invite = models.Invitation(
-        name=invite.name,
+        # name=None,
         email=invite.email,
         role=invite.role,
         tenant_id=current_user.tenant_id,
@@ -50,16 +53,27 @@ def invite_user(invite: schemas.CreateInvite, db: Session = Depends(get_db), cur
     db.add(new_invite)
     db.commit()
     db.refresh(new_invite)
+
+    invite_link = f"http://localhost:3000/accept-invite?token={new_invite.token}"
+
+    background_tasks.add_task(
+        email.send_invitation_email,
+        to_email=invite.email,
+        invite_link=invite_link,
+        invited_by=current_user.name,
+        company_name=new_invite.tenant.company_name)
+    
     return new_invite
 
-@router.post('/{token}', response_model=schemas.TokenWithUser)
+
+
+@router.post('/accept/{token}', response_model=schemas.TokenWithUser)
 def accept_invite(
     token: uuid.UUID,  
     invite: schemas.AcceptInvite,  
     db: Session = Depends(get_db)
 ):
-    
-    
+    # Find invitation
     invitation = db.query(models.Invitation).filter(
         models.Invitation.token == token, 
         models.Invitation.is_used == False, 
@@ -72,14 +86,6 @@ def accept_invite(
             detail="Invalid or expired invitation"
         )
     
-   
-    if invite.email != invitation.email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email does not match the invitation"
-        )
-    
-   
     existing_user = db.query(models.User).filter(
         models.User.email == invitation.email
     ).first()
@@ -93,25 +99,26 @@ def accept_invite(
     
     hashed_password = utils.hash(invite.password) 
 
-    
     new_user = models.User( 
         name=invite.name,
-        email=invite.email, 
+        email=invitation.email, 
         password=hashed_password,
         tenant_id=invitation.tenant_id,
         role=invitation.role,
-        is_active=True  
+        is_active=True
     )
 
     db.add(new_user)
     db.flush()
+
 
     invitation.is_used = True
     invitation.accepted_at = datetime.now(timezone.utc)
     invitation.accepted_by_user_id = new_user.id
 
     db.commit()
-    db.refresh(new_user)  
+    db.refresh(new_user)
+
 
     access_token = oauth2.create_access_token(
         data={
@@ -122,15 +129,7 @@ def accept_invite(
     )
 
     return {
-        "user": {
-            "id": new_user.id,
-            "name": new_user.name,
-            "email": new_user.email,
-            "tenant_id": new_user.tenant_id,
-            "role": new_user.role,
-            "is_active": new_user.is_active,      
-            "created_at": new_user.created_at      
-        },
+        "user": new_user,
         "access_token": access_token,
         "token_type": "bearer"
     }
