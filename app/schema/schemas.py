@@ -118,3 +118,6 @@ class TokenWithUser(BaseModel):
     user: UserOut
     access_token: str
     token_type: str
+
+    class Config:
+        from_attributes = True

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 
 
+
 router = APIRouter(
     prefix="/invite",
     tags=['User Invite']
@@ -94,32 +95,31 @@ def accept_invite(
 
     
     new_user = models.User( 
-        name=invitation.name, 
+        name=invite.name,
         email=invite.email, 
         password=hashed_password,
-        tenant_id=invitation.tenant_id,  
-        role=invitation.role  
+        tenant_id=invitation.tenant_id,
+        role=invitation.role,
+        is_active=True  
     )
 
     db.add(new_user)
-    db.flush()  
+    db.flush()
 
-
-    invitation.is_used= True
+    invitation.is_used = True
     invitation.accepted_at = datetime.now(timezone.utc)
     invitation.accepted_by_user_id = new_user.id
 
     db.commit()
-    db.refresh(new_user)
+    db.refresh(new_user)  
 
     access_token = oauth2.create_access_token(
         data={
-            "sub":str(new_user.id),
+            "sub": str(new_user.id),
             "tenant_id": new_user.tenant_id,
             "role": new_user.role
         }
     )
-
 
     return {
         "user": {
@@ -127,14 +127,10 @@ def accept_invite(
             "name": new_user.name,
             "email": new_user.email,
             "tenant_id": new_user.tenant_id,
-            "role": new_user.role
+            "role": new_user.role,
+            "is_active": new_user.is_active,      
+            "created_at": new_user.created_at      
         },
         "access_token": access_token,
         "token_type": "bearer"
     }
-    
-
-
-
-
-    
