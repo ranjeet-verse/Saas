@@ -73,7 +73,6 @@ def accept_invite(
     invite: schemas.AcceptInvite,  
     db: Session = Depends(get_db)
 ):
-    # Find invitation
     invitation = db.query(models.Invitation).filter(
         models.Invitation.token == token, 
         models.Invitation.is_used == False, 
@@ -127,9 +126,20 @@ def accept_invite(
             "role": new_user.role
         }
     )
+    refresh_token = utils.create_refresh_token()
+
+    db.add(
+        models.RefreshToken(
+            token=refresh_token,
+            user_id=new_user.id,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=7)
+        )
+    )
+    db.commit()
 
     return {
-        "user": new_user,
+        "user": new_user,                 
         "access_token": access_token,
+        "refresh_token": refresh_token,  
         "token_type": "bearer"
     }

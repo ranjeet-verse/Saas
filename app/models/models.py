@@ -41,7 +41,9 @@ class Project(Base):
     name = Column(String, nullable=False)
     description = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_deleted = Column(Boolean, default=False)
     tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False, index=True)
+    
 
     tenant = relationship("Tenant", back_populates="projects")
     tasks = relationship("Task", back_populates="project", cascade="all, delete-orphan")
@@ -54,8 +56,10 @@ class Task(Base):
     title = Column(String, nullable=False)
     description = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_deleted = Column(Boolean, default=False)
     tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False, index=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    
 
     tenant = relationship("Tenant", back_populates="tasks")
     project = relationship("Project", back_populates="tasks")
@@ -80,3 +84,14 @@ class Invitation(Base):
     tenant = relationship("Tenant", back_populates="invitations")
     invited_by = relationship("User", foreign_keys=[invited_by_user_id])
     accepted_by = relationship("User", foreign_keys=[accepted_by_user_id])
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True)
+    token = Column(String, unique=True, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User")

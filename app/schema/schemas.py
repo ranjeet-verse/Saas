@@ -47,12 +47,18 @@ class SignupRequest(BaseModel):
 
 class Token(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str
 
 class TokenData(BaseModel):
     user_id: int
     tenant_id: int
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+class LogoutRequest(BaseModel):
+    refresh_token: str
 
 class Me(BaseModel):
     id: int
@@ -114,6 +120,7 @@ class AcceptInvite(BaseModel):
 class TokenWithUser(BaseModel):  
     user: UserOut
     access_token: str
+    refresh_token: str
     token_type: str
 
     class Config:
