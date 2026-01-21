@@ -1,0 +1,31 @@
+from dotenv import load_dotenv
+load_dotenv()
+from fastapi import FastAPI
+from .database import engine
+from .models import models
+from fastapi.middleware.cors import CORSMiddleware
+
+from .routers import user, auth, me, projects, invite
+
+
+models.Base.metadata.create_all(bind=engine)
+
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Your React app's URL
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods including OPTIONS
+    allow_headers=["*"],  # Allows all headers
+)
+
+
+@app.get('/')
+def home():
+    return "Hello Here resides my Saas"
+
+app.include_router(user.router)
+app.include_router(auth.router)
+app.include_router(me.router)
+app.include_router(projects.router)
+app.include_router(invite.router)
