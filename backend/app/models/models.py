@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
-from ..database import Base
+from app.database import Base
 from sqlalchemy import func
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
@@ -47,6 +47,8 @@ class Project(Base):
 
     tenant = relationship("Tenant", back_populates="projects")
     tasks = relationship("Task", back_populates="project", cascade="all, delete-orphan")
+    members = relationship("ProjectMember", back_populates="project", cascade="all, delete")
+
 
 
 class Task(Base):
@@ -94,4 +96,16 @@ class RefreshToken(Base):
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    user = relationship("User")
+
+class ProjectMembers(Base):
+    __tablename__ = "project_members"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    role = Column(String, default="viewer")
+    joined_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    project = relationship("Project", back_populates="members")
     user = relationship("User")

@@ -84,9 +84,15 @@ const api = {
     return this.request(`/projects/?${query}`);
   },
 
-  async createProject(data) {
-    return this.request('/projects/', { method: 'POST', body: JSON.stringify(data) });
+  async getProjects(params = {}) {
+  const cleanParams = Object.fromEntries(
+    Object.entries(params).filter(([_, v]) => v !== undefined && v !== "")
+  );
+
+  const query = new URLSearchParams(cleanParams).toString();
+  return this.request(query ? `/projects/?${query}` : `/projects/`);
   },
+
 
   async deleteProject(id) {
     return this.request(`/projects/${id}`, { method: 'DELETE' });
@@ -112,7 +118,7 @@ const api = {
   },
 
   async acceptInvite(token, data) {
-  return this.request(`/invite/accept?token=${token}`, {
+  return this.request(`/invite/accept/${token}`, {
     method: 'POST',
     body: JSON.stringify(data),});
   },

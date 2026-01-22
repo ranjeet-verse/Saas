@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .routers import user, auth, me, projects, invite
 
 
-models.Base.metadata.create_all(bind=engine)
+# models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 app.add_middleware(

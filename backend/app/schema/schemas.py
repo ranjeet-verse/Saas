@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, Field
 from datetime import datetime
 from typing import Optional, Literal
 import uuid
@@ -196,3 +196,10 @@ class TokenWithUser(SecureBaseModel):
     access_token: str
     refresh_token: str
     token_type: str
+
+class ProjectMemberCreate(BaseModel):
+    user_id: int = Field(..., description="User ID to add to the project")
+    role: Literal["owner", "editor", "viewer"] = Field(
+        default="viewer",
+        description="Role of the user in the project"
+    )
