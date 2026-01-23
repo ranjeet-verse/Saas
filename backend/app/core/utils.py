@@ -34,3 +34,28 @@ def require_project_roles(required_roles: list):
     return checker
 
 
+def update_project_progress(
+    db: Session , project_id: int):
+
+    total_task = db.query(models.Task).filter(
+        models.Task.project_id == project_id,
+        models.Task.is_deleted.is_(False)
+    ).count()
+
+    if total_tasks == 0:
+        progress = 0
+    else:
+
+        completed_task = db.query(models.Task).filter(
+            models.Task.project_id == project_id,
+            models.Task.status == "done",
+            models.Task.is_deleted.is_(False)
+        ).count()
+
+        progress = int((completed_task / total_task) * 100)
+    
+    db.query(models.Project).filter(
+        models.Project.id == project_id
+    ).update({"progress": progress}, synchronize_session=False)
+
+    db.commit()

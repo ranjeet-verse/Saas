@@ -33,6 +33,20 @@ class User(Base):
 
     tenant = relationship("Tenant", back_populates="users")
 
+class ProjectMembers(Base):
+    __tablename__ = "project_members"
+    __table_args__ = (
+        UniqueConstraint("project_id", "user_id", name="uq_project_user"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    role = Column(String, default="viewer")
+    joined_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    project = relationship("Project", back_populates="members")
+    user = relationship("User")
 
 class Project(Base):
     __tablename__ = "projects"
@@ -40,6 +54,7 @@ class Project(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     description = Column(String, nullable=False)
+    progress = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     is_deleted = Column(Boolean, default=False)
     tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False, index=True)
@@ -47,7 +62,7 @@ class Project(Base):
 
     tenant = relationship("Tenant", back_populates="projects")
     tasks = relationship("Task", back_populates="project", cascade="all, delete-orphan")
-    members = relationship("ProjectMember", back_populates="project", cascade="all, delete")
+    members = relationship("ProjectMembers", back_populates="project", cascade="all, delete")
 
 
 
@@ -57,6 +72,7 @@ class Task(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
     description = Column(String, nullable=False)
+    status = Column(String, default="todo")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     is_deleted = Column(Boolean, default=False)
     tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False, index=True)
@@ -98,14 +114,4 @@ class RefreshToken(Base):
 
     user = relationship("User")
 
-class ProjectMembers(Base):
-    __tablename__ = "project_members"
 
-    id = Column(Integer, primary_key=True)
-    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"))
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
-    role = Column(String, default="viewer")
-    joined_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    project = relationship("Project", back_populates="members")
-    user = relationship("User")

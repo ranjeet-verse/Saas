@@ -8,15 +8,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from .routers import user, auth, me, projects, invite
 
 
-# models.Base.metadata.create_all(bind=engine)
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Your React app's URL
+    allow_origins=["http://localhost:3000"],  
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods including OPTIONS
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],  
+    allow_headers=["*"],  
 )
 
 

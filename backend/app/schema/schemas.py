@@ -139,6 +139,7 @@ class ProjectOut(SecureBaseModel):
     id: int
     name: str
     description: str
+    progress: int
     created_at: datetime
 
 
