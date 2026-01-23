@@ -142,6 +142,13 @@ class ProjectOut(SecureBaseModel):
     progress: int
     created_at: datetime
 
+class ProjectMemberOut(BaseModel):
+    user_id: int
+    role: str
+    joined_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class TaskCreate(SecureBaseModel):
