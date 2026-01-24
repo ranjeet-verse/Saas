@@ -6,10 +6,10 @@ from app.core import oauth2
 from ..database import get_db
 from ..models import models
 
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-# ---------- AUTH HELPERS ----------
 
 def hash(password: str):
     return pwd_context.hash(password)

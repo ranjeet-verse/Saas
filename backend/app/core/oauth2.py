@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 from .. import database
 from fastapi.security import OAuth2PasswordBearer
-from fastapi import HTTPException, Depends
+from fastapi import HTTPException, Depends, Request, requests
 from sqlalchemy.orm import Session
 from ..schema import schemas
 from ..models import models
@@ -42,7 +42,10 @@ def verify_access_token(token: str, credentials_exception):
             raise credentials_exception
     return token_data
 
-def get_current_user(db: Session = Depends(database.get_db), token: str = Depends(oauth2_scheme)):
+def get_current_user(
+                    db: Session = Depends(database.get_db),
+                    token: str = Depends(oauth2_scheme)):
+    
     credentials_exception = HTTPException( status_code=401, 
         detail="Invalid Credentials",  
         headers={'WWW-Authenticate': 'Bearer'} 
@@ -54,7 +57,7 @@ def get_current_user(db: Session = Depends(database.get_db), token: str = Depend
 
     if user is None:
          raise credentials_exception
-    
+
     return user
     
     

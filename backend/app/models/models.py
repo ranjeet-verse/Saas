@@ -73,6 +73,7 @@ class Task(Base):
     title = Column(String, nullable=False)
     description = Column(String, nullable=False)
     status = Column(String, default="todo")
+    priority = Column(String, default="medium") 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     is_deleted = Column(Boolean, default=False)
     tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False, index=True)

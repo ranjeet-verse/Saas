@@ -61,11 +61,11 @@ def admin(data: SignupRequest, db: Session = Depends(get_db)):
 
     existing_tentant = db.query(models.Tenant).filter(models.Tenant.company_name == data.company_name).first()
     if existing_tentant:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, details="Company already Exists")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Company already Exists")
     
     existing_user = db.query(models.User).filter(models.User.email == data.email).first()
     if existing_user:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, details="Email already Exists")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already Exists")
   
     new_tenant = models.Tenant(company_name=data.company_name)
     db.add(new_tenant)

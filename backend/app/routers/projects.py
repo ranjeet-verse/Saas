@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from sqlalchemy import or_
 
+
 router = APIRouter(
     prefix="/projects",
     tags=["Projects"]
@@ -132,9 +133,14 @@ def create_task(
         utils.require_project_roles(["owner", "editor"])
     ),
 ):
+    
+    project = db.query(models.Project).filter(
+    models.Project.id == project_id).first()
+    
     new_task = models.Task(
         **task.model_dump(),
         project_id=project_id,
+        tenant_id=project.tenant_id,
     )
 
     db.add(new_task)
@@ -164,7 +170,7 @@ def see_tasks(
 def update_task(
     project_id: int,
     task_id: int,
-    task: schemas.TaskUpdate,
+    task: schemas.TaskCreate,
     db: Session = Depends(get_db),
     _: models.ProjectMembers = Depends(
         utils.require_project_roles(["owner", "editor"])

@@ -154,6 +154,8 @@ class ProjectMemberOut(BaseModel):
 class TaskCreate(SecureBaseModel):
     title: str
     description: Optional[str] = None
+    status: str = Field(default="todo")
+    priority: str = Field(default="medium") 
 
     @field_validator("title")
     @classmethod
@@ -174,6 +176,8 @@ class TaskOut(SecureBaseModel):
     id: int
     title: str
     description: Optional[str]
+    status: str
+    priority: str
     project_id: int
     created_at: datetime
 
