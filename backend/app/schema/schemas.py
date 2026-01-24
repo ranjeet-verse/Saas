@@ -60,6 +60,7 @@ class UserSignup(SecureBaseModel):
 
 class UserInvite(SecureBaseModel):
     email: EmailStr
+    role: str
 
 
 class UserAcceptInvite(SecureBaseModel):
@@ -187,15 +188,21 @@ class CreateInvite(SecureBaseModel):
     role: Literal["member", "admin"] = "member"
 
 
-class InviteOut(SecureBaseModel):
+class InviteOut(BaseModel):
     id: int
-    token: uuid.UUID
-    email: EmailStr
+    email: str
     role: str
+    token: uuid.UUID
+    tenant_id: int
+    invited_by_user_id: int
     is_used: bool
     expires_at: datetime
     created_at: datetime
-    invited_by_user_id: int
+    accepted_at: Optional[datetime] = None
+    accepted_by_user_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
 
 
 class AcceptInvite(SecureBaseModel):
@@ -204,7 +211,7 @@ class AcceptInvite(SecureBaseModel):
 
 
 class TokenWithUser(SecureBaseModel):
-    user: UserOut
+    user: UserOut  # Make sure UserOut is defined above this
     access_token: str
     refresh_token: str
     token_type: str

@@ -14,16 +14,27 @@ router = APIRouter(
     tags=['User Invite']
 )
 
+VALID_ROLES = ["admin", "editor", "viewer", "member"]
+
 @router.post('/', response_model=schemas.InviteOut)
 def invite_user(invite: schemas.CreateInvite, 
                 background_tasks: BackgroundTasks , 
                 db: Session = Depends(get_db), 
                 current_user: models.User = Depends(oauth2.get_current_user)):
 
-    if current_user.role not in ["admin"]:
+    print(f"DEBUG: Current user role: {current_user.role}")
+    print(f"DEBUG: Invited user role: {invite.role}")
+
+    if current_user.role.lower() not in ["admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can invite users"
+    )
+
+    if invite.role not in VALID_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid role. Must be one of: {', '.join(VALID_ROLES)}"
         )
     
     existing_user = db.query(models.User).filter(models.User.email == invite.email, models.User.tenant_id == current_user.tenant_id).first()
