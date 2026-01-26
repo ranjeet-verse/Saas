@@ -17,7 +17,7 @@ router = APIRouter(
 VALID_ROLES = ["admin", "editor", "viewer", "member"]
 
 @router.post('/', response_model=schemas.InviteOut)
-def invite_user(invite: schemas.CreateInvite, 
+async def invite_user(invite: schemas.CreateInvite, 
                 background_tasks: BackgroundTasks , 
                 db: Session = Depends(get_db), 
                 current_user: models.User = Depends(oauth2.get_current_user)):
@@ -79,7 +79,7 @@ def invite_user(invite: schemas.CreateInvite,
 
 
 @router.post('/accept/{token}', response_model=schemas.TokenWithUser)
-def accept_invite(
+async def accept_invite(
     token: uuid.UUID,  
     invite: schemas.AcceptInvite,  
     db: Session = Depends(get_db)

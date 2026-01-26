@@ -12,7 +12,7 @@ router = APIRouter(prefix="/auth",
                     tags=["Tenant"])
 
 @router.post('/login', response_model=Token)
-def auth_user(db: Session = Depends(get_db), user_credentials: OAuth2PasswordRequestForm = Depends()):
+async def auth_user(db: Session = Depends(get_db), user_credentials: OAuth2PasswordRequestForm = Depends()):
 
     user = db.query(models.User).filter(models.User.email == user_credentials.username).first()
 
@@ -43,7 +43,7 @@ def auth_user(db: Session = Depends(get_db), user_credentials: OAuth2PasswordReq
     }
 
 @router.post('/logout', status_code=status.HTTP_204_NO_CONTENT)
-def logout(data: LogoutRequest, db: Session = Depends(get_db)):
+async def logout(data: LogoutRequest, db: Session = Depends(get_db)):
 
     token_record = db.query(models.RefreshToken).filter(models.RefreshToken.token == data.refresh_token).first()
 
@@ -57,7 +57,7 @@ def logout(data: LogoutRequest, db: Session = Depends(get_db)):
 
 
 @router.post('/admin', response_model=RefreshTokenRequest, status_code=status.HTTP_201_CREATED)
-def admin(data: SignupRequest, db: Session = Depends(get_db)):
+async def admin(data: SignupRequest, db: Session = Depends(get_db)):
 
     existing_tentant = db.query(models.Tenant).filter(models.Tenant.company_name == data.company_name).first()
     if existing_tentant:
@@ -114,7 +114,7 @@ def admin(data: SignupRequest, db: Session = Depends(get_db)):
 
     
 @router.post("/refresh", response_model= Token)
-def refresh_access_token(
+async def refresh_access_token(
     data: RefreshTokenRequest,
     db: Session = Depends(get_db)
 ):

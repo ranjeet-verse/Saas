@@ -1,4 +1,4 @@
-
+from .core import logging
 from fastapi import FastAPI
 from .database import engine
 from .models import models
@@ -10,7 +10,8 @@ from .routers import user, auth, me, projects, invite
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
-
+app.add_middleware(logging.LoggingMiddleware)
+app.add_middleware(logging.RateLimitMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

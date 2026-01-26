@@ -23,7 +23,6 @@ def create_refresh_token():
     return secrets.token_urlsafe(64)
 
 
-# ---------- PERMISSION DEPENDENCY ----------
 
 def require_project_roles(required_roles: list):
     def checker(
@@ -54,7 +53,6 @@ def require_project_roles(required_roles: list):
     return checker
 
 
-# ---------- PROJECT PROGRESS ----------
 
 def update_project_progress(db: Session, project_id: int):
     # 1️⃣ Ensure project is active
@@ -88,3 +86,5 @@ def update_project_progress(db: Session, project_id: int):
 
     # 4️⃣ Commit once
     # db.commit()
+
+

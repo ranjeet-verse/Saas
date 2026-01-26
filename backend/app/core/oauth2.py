@@ -42,7 +42,7 @@ def verify_access_token(token: str, credentials_exception):
             raise credentials_exception
     return token_data
 
-def get_current_user(
+def get_current_user(request: Request,
                     db: Session = Depends(database.get_db),
                     token: str = Depends(oauth2_scheme)):
     
@@ -54,6 +54,8 @@ def get_current_user(
     token_data = verify_access_token(token, credentials_exception)
 
     user = db.query(models.User).filter(models.User.id == token_data.user_id, models.User.tenant_id == token_data.tenant_id).first()
+
+    request.state.user = user
 
     if user is None:
          raise credentials_exception

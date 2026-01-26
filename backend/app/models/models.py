@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, UniqueConstraint
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
 from sqlalchemy import func
@@ -116,3 +116,15 @@ class RefreshToken(Base):
     user = relationship("User")
 
 
+class Log(Base):
+    __tablename__ = "logs"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, index=True)
+    user_id = Column(Integer, index=True)
+    action = Column(String(100))
+    category = Column(String(100))
+    message = Column(Text)
+    ip_address = Column(String(45))
+    user_agent = Column(Text)
+    created_at = DateTime(timezone=True), server_default=func.now()

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, status, HTTPException, Query
 from ..schema import schemas
 from ..models import models
-from ..core import oauth2, utils
+from ..core import oauth2, utils, logger
 from ..database import get_db
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -16,7 +16,7 @@ router = APIRouter(
 # ===================== PROJECTS =====================
 
 @router.get("/", response_model=List[schemas.ProjectOut])
-def see_projects(
+async def see_projects(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
     search: Optional[str] = None,
@@ -45,7 +45,7 @@ def see_projects(
 
 
 @router.get("/{project_id}", response_model=schemas.ProjectOut)
-def see_project(
+async def see_project(
     project_id: int,
     db: Session = Depends(get_db),
     _: models.ProjectMembers = Depends(
@@ -58,7 +58,7 @@ def see_project(
 
 
 @router.post("/", response_model=schemas.ProjectOut, status_code=status.HTTP_201_CREATED)
-def create_project(
+async def create_project(
     project: schemas.ProjectCreate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user),
@@ -85,7 +85,7 @@ def create_project(
 
 
 @router.put("/{project_id}", response_model=schemas.ProjectOut)
-def update_project(
+async def update_project(
     project_id: int,
     project: schemas.ProjectUpdate,
     db: Session = Depends(get_db),
@@ -107,7 +107,7 @@ def update_project(
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_project(
+async def delete_project(
     project_id: int,
     db: Session = Depends(get_db),
     _: models.ProjectMembers = Depends(
@@ -125,7 +125,7 @@ def delete_project(
 # ===================== TASKS =====================
 
 @router.post("/{project_id}/task", response_model=schemas.TaskOut, status_code=status.HTTP_201_CREATED)
-def create_task(
+async def create_task(
     project_id: int,
     task: schemas.TaskCreate,
     db: Session = Depends(get_db),
@@ -153,7 +153,7 @@ def create_task(
 
 
 @router.get("/{project_id}/task", response_model=List[schemas.TaskOut])
-def see_tasks(
+async def see_tasks(
     project_id: int,
     db: Session = Depends(get_db),
     _: models.ProjectMembers = Depends(
@@ -167,15 +167,16 @@ def see_tasks(
 
 
 @router.put("/{project_id}/task/{task_id}", response_model=schemas.TaskOut)
-def update_task(
+async def update_task(
     project_id: int,
     task_id: int,
     task: schemas.TaskCreate,
+    # current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
     _: models.ProjectMembers = Depends(
         utils.require_project_roles(["owner", "editor"])
-    ),
-):
+    ),):
+
     task_q = db.query(models.Task).filter(
         models.Task.id == task_id,
         models.Task.project_id == project_id,
@@ -183,6 +184,14 @@ def update_task(
     )
 
     if not task_q.first():
+        # logger.create_log(
+        #     db,
+        #     request,
+        #     action="FORBIDDEN_DELETE_USER",
+        #     category="SECURITY",
+        #     message="Non-admin tried to delete a user",
+        #     user_id=current_user.id,
+        #     tenant_id=current_user.tenant_id)
         raise HTTPException(status_code=404, detail="Task not found")
 
     task_q.update(
@@ -197,7 +206,7 @@ def update_task(
 
 
 @router.delete("/{project_id}/task/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(
+async def delete_task(
     project_id: int,
     task_id: int,
     db: Session = Depends(get_db),
@@ -223,7 +232,7 @@ def delete_task(
 # ===================== MEMBERS =====================
 
 @router.post("/{project_id}/members")
-def add_member(
+async def add_member(
     project_id: int,
     data: schemas.ProjectMemberCreate,
     db: Session = Depends(get_db),
@@ -264,7 +273,7 @@ def add_member(
 
 
 @router.get("/{project_id}/members", response_model=List[schemas.ProjectMemberOut])
-def members_of_project(
+async def members_of_project(
     project_id: int,
     db: Session = Depends(get_db),
     _: models.ProjectMembers = Depends(
