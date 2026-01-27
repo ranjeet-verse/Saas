@@ -10,12 +10,12 @@ SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 
-sessionlocal = sessionmaker(bind=engine)
+SessionLocal = sessionmaker(bind=engine)
 
 Base = declarative_base()
 
 def get_db():
-    db = sessionlocal()
+    db = SessionLocal()
     try:
         yield db
     finally:

@@ -1,11 +1,14 @@
-from time import time
+import time
 from collections import defaultdict
 from fastapi import Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.orm import Session
 from ..database import SessionLocal
 from ..models import models
-
+from fastapi import Request, HTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
+from app.database import SessionLocal
+from app.models import models
 
 RATE_LIMIT= 100
 WINDOW = 60
@@ -13,7 +16,7 @@ WINDOW = 60
 requests = defaultdict(list)
 
 def is_rate_limited(key: str):
-    now = time()
+    now = time.time()
     requests[key] = [t for t in requests[key] if now - t < WINDOW ]
 
     if len(requests[key]) >= RATE_LIMIT:
@@ -60,13 +63,11 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
         return response
 
-from fastapi import Request, HTTPException
-from starlette.middleware.base import BaseHTTPMiddleware
-from app.database import SessionLocal
-from app.models import models
+
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        print("RateLimitMiddleware HIT")
         user = getattr(request.state, "user", None)
         key = f"user:{user.id}" if user else f"ip:{request.client.host}"
 

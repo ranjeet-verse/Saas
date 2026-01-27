@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, status, HTTPException, Query
 from ..schema import schemas
 from ..models import models
-from ..core import oauth2, utils, logger
+from ..core import oauth2, utils
 from ..database import get_db
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -283,3 +283,38 @@ async def members_of_project(
     return db.query(models.ProjectMembers).filter(
         models.ProjectMembers.project_id == project_id
     ).all()
+
+# Add to your projects router
+@router.delete("/{project_id}/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_project_member(
+    project_id: int,
+    member_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user),
+    _: models.ProjectMembers = Depends(
+        utils.require_project_roles(["owner"])
+    ),
+):
+    """Remove a member from a project"""
+    member = db.query(models.ProjectMembers).filter(
+        models.ProjectMembers.id == member_id,
+        models.ProjectMembers.project_id == project_id
+    ).first()
+    
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+    
+    # Don't allow removing the last owner
+    if member.role == "owner":
+        owner_count = db.query(models.ProjectMembers).filter(
+            models.ProjectMembers.project_id == project_id,
+            models.ProjectMembers.role == "owner"
+        ).count()
+        if owner_count <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot remove the last owner from the project"
+            )
+    
+    db.delete(member)
+    db.commit()

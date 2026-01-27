@@ -11,6 +11,18 @@ router = APIRouter(
     tags=["User"]
 )
 
+# Add to your user router
+@router.get("/", response_model=list[schemas.UserOut])
+async def get_tenant_users(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user),
+):
+    """Get all users in the current tenant"""
+    users = db.query(models.User).filter(
+        models.User.tenant_id == current_user.tenant_id,
+        models.User.is_active == True
+    ).all()
+    return users
 # @router.post('/', status_code=status.HTTP_201_CREATED, response_model=schemas.UserOut)
 # def new_user(user: schemas.UserSignup, db:Session = Depends(get_db), current_user: models.User= Depends(oauth2.get_current_user)):
 
