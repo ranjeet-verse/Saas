@@ -147,11 +147,39 @@ class ProjectMemberOut(BaseModel):
     user_id: int
     role: str
     joined_at: datetime
+    user: Optional[UserOut] = None
 
     class Config:
         from_attributes = True
 
 
+
+class ProjectMemberWithUserOut(BaseModel):
+    id: int
+    user_id: int
+    role: str
+    joined_at: datetime
+    user_name: str
+    user_email: str
+    user_role: str
+
+    class Config:
+        from_attributes = True
+        
+    @classmethod
+    def from_orm(cls, obj):
+        # Custom method to extract user info
+        return cls(
+            id=obj.id,
+            user_id=obj.user_id,
+            role=obj.role,
+            joined_at=obj.joined_at,
+            user_name=obj.user.name if obj.user else "Unknown",
+            user_email=obj.user.email if obj.user else "",
+            user_role=obj.user.role if obj.user else ""
+        )
+
+        
 class TaskCreate(SecureBaseModel):
     title: str
     description: Optional[str] = None

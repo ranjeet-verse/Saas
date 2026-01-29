@@ -1112,65 +1112,77 @@ const loadAvailableUsers = async () => {
         </Card>
       )}
 
-      {/* Project Members */}
-      <Card className="p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-bold text-gray-900">Team Members ({members.length})</h3>
-          {currentUser?.role === 'admin' && members.length > 0 && (
+{/* Project Members */}
+<Card className="p-6">
+  <div className="flex justify-between items-center mb-4">
+    <h3 className="text-lg font-bold text-gray-900">Team Members ({members.length})</h3>
+    {currentUser?.role === 'admin' && members.length > 0 && (
+      <button
+        onClick={() => setShowMemberModal(true)}
+        className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+      >
+        + Add Member
+      </button>
+    )}
+  </div>
+  
+  {members && members.length > 0 ? (
+    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {members.map(member => (
+        <div key={member.id || member.user_id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center">
+              <User className="w-5 h-5" />
+            </div>
+            <div>
+              {/* User's actual name - bigger text */}
+              <div className="font-medium text-gray-900">
+                {member.user?.name || member.user_name || 'Loading...'}
+              </div>
+              
+              {/* "Team Member" text - smaller and lighter */}
+              <div className="text-xs text-gray-500 mt-0.5">
+                Team Member
+              </div>
+              
+              {/* Role text - even smaller and lighter */}
+              <div className="text-xs text-gray-400 capitalize">
+                {member.role}
+              </div>
+            </div>
+          </div>
+          
+          {currentUser?.role === 'admin' && member.user_id !== currentUser.id && (
             <button
-              onClick={() => setShowMemberModal(true)}
-              className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+              onClick={() => removeMember(member.id)}
+              className="p-1 hover:bg-red-50 rounded text-red-600 transition-colors"
+              title="Remove member"
             >
-              + Add Member
+              <Trash2 className="w-4 h-4" />
             </button>
           )}
         </div>
-        
-        {members && members.length > 0 ? (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {members.map(member => (
-              <div key={member.id || member.user_id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center">
-                    <User className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="font-medium text-gray-900">{member.user?.name || 'Team Member'}</div>
-                    <div className="text-sm text-gray-500 capitalize">{member.role}</div>
-                  </div>
-                </div>
-                
-                {currentUser?.role === 'admin' && member.user_id !== currentUser.id && (
-                  <button
-                    onClick={() => removeMember(member.id)}
-                    className="p-1 hover:bg-red-50 rounded text-red-600 transition-colors"
-                    title="Remove member"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-8 text-gray-500">
-            <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p>No team members yet</p>
-            <p className="text-sm mt-1">Add team members to collaborate on this project</p>
-            {currentUser?.role === 'admin' && (
-              <Button
-                onClick={() => setShowMemberModal(true)}
-                variant="primary"
-                size="sm"
-                className="mt-3"
-              >
-                <UserPlus className="w-4 h-4 mr-2" />
-                Add First Member
-              </Button>
-            )}
-          </div>
-        )}
-      </Card>
+      ))}
+    </div>
+  ) : (
+    <div className="text-center py-8 text-gray-500">
+      <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
+      <p>No team members yet</p>
+      <p className="text-sm mt-1">Add team members to collaborate on this project</p>
+      {currentUser?.role === 'admin' && (
+        <Button
+          onClick={() => setShowMemberModal(true)}
+          variant="primary"
+          size="sm"
+          className="mt-3"
+        >
+          <UserPlus className="w-4 h-4 mr-2" />
+          Add First Member
+        </Button>
+      )}
+    </div>
+  )}
+</Card>
 
       {/* Modals */}
       <Modal 

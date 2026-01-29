@@ -48,9 +48,7 @@ async def see_projects(
 async def see_project(
     project_id: int,
     db: Session = Depends(get_db),
-    _: models.ProjectMembers = Depends(
-        utils.require_project_roles(["owner", "editor", "viewer"])
-    ),
+    project_obj = Depends(utils.require_project_access(["owner", "editor", "viewer"], allow_admin=True)),
 ):
     return db.query(models.Project).filter(
         models.Project.id == project_id
@@ -89,9 +87,7 @@ async def update_project(
     project_id: int,
     project: schemas.ProjectUpdate,
     db: Session = Depends(get_db),
-    _: models.ProjectMembers = Depends(
-        utils.require_project_roles(["owner", "editor"])
-    ),
+     project_obj = Depends(utils.require_project_access(["owner", "editor"], allow_admin=True)),
 ):
     project_q = db.query(models.Project).filter(
         models.Project.id == project_id
@@ -110,9 +106,7 @@ async def update_project(
 async def delete_project(
     project_id: int,
     db: Session = Depends(get_db),
-    _: models.ProjectMembers = Depends(
-        utils.require_project_roles(["owner"])
-    ),
+    project_obj = Depends(utils.require_project_access(["owner"], allow_admin=True)),
 ):
     project = db.query(models.Project).filter(
         models.Project.id == project_id
@@ -129,9 +123,7 @@ async def create_task(
     project_id: int,
     task: schemas.TaskCreate,
     db: Session = Depends(get_db),
-    _: models.ProjectMembers = Depends(
-        utils.require_project_roles(["owner", "editor"])
-    ),
+    project_obj = Depends(utils.require_project_access(["owner", "editor"], allow_admin=True)),
 ):
     
     project = db.query(models.Project).filter(
@@ -156,9 +148,7 @@ async def create_task(
 async def see_tasks(
     project_id: int,
     db: Session = Depends(get_db),
-    _: models.ProjectMembers = Depends(
-        utils.require_project_roles(["owner", "editor", "viewer"])
-    ),
+    project_obj = Depends(utils.require_project_access(["owner", "editor", "viewer"], allow_admin=True)),
 ):
     return db.query(models.Task).filter(
         models.Task.project_id == project_id,
@@ -173,9 +163,7 @@ async def update_task(
     task: schemas.TaskCreate,
     # current_user: models.User = Depends(oauth2.get_current_user),
     db: Session = Depends(get_db),
-    _: models.ProjectMembers = Depends(
-        utils.require_project_roles(["owner", "editor"])
-    ),):
+    project_obj = Depends(utils.require_project_access(["owner", "editor"], allow_admin=True)),):
 
     task_q = db.query(models.Task).filter(
         models.Task.id == task_id,
@@ -210,10 +198,8 @@ async def delete_task(
     project_id: int,
     task_id: int,
     db: Session = Depends(get_db),
-    _: models.ProjectMembers = Depends(
-        utils.require_project_roles(["owner"])
-    ),
-):
+    project_obj = Depends(utils.require_project_access(["owner"], allow_admin=True))):
+
     task = db.query(models.Task).filter(
         models.Task.id == task_id,
         models.Task.project_id == project_id,
@@ -237,10 +223,8 @@ async def add_member(
     data: schemas.ProjectMemberCreate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user),
-    _: models.ProjectMembers = Depends(
-        utils.require_project_roles(["owner"])
-    ),
-):
+    project_obj = Depends(utils.require_project_access(["owner"], allow_admin=True)),):
+
     user = db.query(models.User).filter(
         models.User.id == data.user_id,
         models.User.tenant_id == current_user.tenant_id,
@@ -272,17 +256,20 @@ async def add_member(
     return {"message": "Member added"}
 
 
-@router.get("/{project_id}/members", response_model=List[schemas.ProjectMemberOut])
+@router.get("/{project_id}/members", response_model=List[schemas.ProjectMemberWithUserOut])
 async def members_of_project(
     project_id: int,
     db: Session = Depends(get_db),
-    _: models.ProjectMembers = Depends(
-        utils.require_project_roles(["owner", "editor", "viewer"])
-    ),
+    project_obj = Depends(utils.require_project_access(["owner", "editor", "viewer"], allow_admin=True)),
 ):
-    return db.query(models.ProjectMembers).filter(
-        models.ProjectMembers.project_id == project_id
-    ).all()
+    members = (
+        db.query(models.ProjectMembers)
+        .join(models.User, models.ProjectMembers.user_id == models.User.id)
+        .filter(models.ProjectMembers.project_id == project_id)
+        .all()
+    )
+    
+    return [schemas.ProjectMemberWithUserOut.from_orm(member) for member in members]
 
 # Add to your projects router
 @router.delete("/{project_id}/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -291,9 +278,7 @@ async def remove_project_member(
     member_id: int,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user),
-    _: models.ProjectMembers = Depends(
-        utils.require_project_roles(["owner"])
-    ),
+    project_obj = Depends(utils.require_project_access(["owner"], allow_admin=True)),
 ):
     """Remove a member from a project"""
     member = db.query(models.ProjectMembers).filter(

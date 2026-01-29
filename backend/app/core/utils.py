@@ -24,28 +24,49 @@ def create_refresh_token():
 
 
 
-def require_project_roles(required_roles: list):
+def require_project_access(required_roles: list = None, allow_admin: bool = True):
+    """
+    Check if user has access to a project.
+    If allow_admin=True, admins can access any project in their tenant.
+    """
     def checker(
         project_id: int,
         db: Session = Depends(get_db),
         current_user: models.User = Depends(oauth2.get_current_user),
     ):
-        member = (
-            db.query(models.ProjectMembers)
-            .join(models.Project)
-            .filter(
-                models.ProjectMembers.project_id == project_id,
-                models.ProjectMembers.user_id == current_user.id,
-                models.Project.tenant_id == current_user.tenant_id,
-                models.Project.is_deleted.is_(False),
-            )
-            .first()
-        )
+        # First check if project exists and belongs to tenant
+        project = db.query(models.Project).filter(
+            models.Project.id == project_id,
+            models.Project.tenant_id == current_user.tenant_id,
+            models.Project.is_deleted.is_(False),
+        ).first()
 
-        if not member or member.role not in required_roles:
+        if not project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found"
+            )
+
+        # If user is admin and we allow admin access, grant permission
+        if allow_admin and current_user.role == "admin":
+            return project
+
+        # Otherwise check project membership
+        member = db.query(models.ProjectMembers).filter(
+            models.ProjectMembers.project_id == project_id,
+            models.ProjectMembers.user_id == current_user.id,
+        ).first()
+
+        if not member:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have access to this project",
+            )
+
+        if required_roles and member.role not in required_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have required role for this action",
             )
 
         return member
