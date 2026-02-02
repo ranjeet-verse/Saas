@@ -4,7 +4,7 @@ from .database import engine
 from .models import models
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import user, auth, me, projects, invite
+from .routers import user, auth, me, projects, invite, messaging
 
 
 models.Base.metadata.create_all(bind=engine)
@@ -33,3 +33,4 @@ app.include_router(auth.router)
 app.include_router(me.router)
 app.include_router(projects.router)
 app.include_router(invite.router)
+app.include_router(messaging.router)

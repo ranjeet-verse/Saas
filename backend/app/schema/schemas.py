@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, field_validator, Field
 from datetime import datetime
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 import uuid
 import re
 import html
@@ -250,3 +250,67 @@ class ProjectMemberCreate(BaseModel):
         default="viewer",
         description="Role of the user in the project"
     )
+
+# Message Schemas
+class ConversationParticipantBase(BaseModel):
+    user_id: int
+    user: Optional["UserOut"] = None
+    
+    class Config:
+        from_attributes = True
+
+class ConversationParticipantOut(ConversationParticipantBase):
+    id: int
+    conversation_id: int
+    joined_at: datetime
+
+class ConversationBase(BaseModel):
+    id: int
+    is_group: bool = False
+    name: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+class ConversationOut(ConversationBase):
+    participants: List[ConversationParticipantOut] = []
+    messages: List["MessageOut"] = []
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    last_message: Optional["MessageOut"] = None
+
+class CreateConversation(SecureBaseModel):
+    user_id: int
+    is_group: Optional[bool] = False
+    name: Optional[str] = None
+    participant_ids: Optional[List[int]] = None  
+
+class MessageBase(BaseModel):
+    content: str
+    
+    class Config:
+        from_attributes = True
+
+class MessageOut(MessageBase):
+    id: int
+    conversation_id: int
+    sender_id: int
+    sender: Optional["UserOut"] = None
+    created_at: datetime
+    is_read: bool
+
+class CreateMessage(SecureBaseModel):
+    content: str
+
+# Update UserOut to include last_message_seen if needed
+# class UserOut(BaseModel):
+#     id: int
+#     email: str
+#     created_at: datetime
+#     first_name: Optional[str] = None
+#     last_name: Optional[str] = None
+#     avatar_url: Optional[str] = None
+#     last_message_seen: Optional[datetime] = None
+    
+#     class Config:
+#         from_attributes = True

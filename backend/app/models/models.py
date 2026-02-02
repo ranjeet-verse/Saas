@@ -32,6 +32,8 @@ class User(Base):
     tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False, index=True)
 
     tenant = relationship("Tenant", back_populates="users")
+    conversation_participants = relationship("ConversationParticipant", back_populates="user",cascade="all, delete-orphan")
+    sent_messages = relationship("Message", back_populates="sender",foreign_keys="Message.sender_id",cascade="all, delete-orphan")
 
 class ProjectMembers(Base):
     __tablename__ = "project_members"
@@ -129,3 +131,41 @@ class Log(Base):
     user_agent = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    name = Column(String, nullable=True)
+    is_group = Column(Boolean, default=False)
+
+    participants = relationship("ConversationParticipant", back_populates="conversation", cascade="all, delete-orphan")
+    messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
+
+class ConversationParticipant(Base):
+    __tablename__ = "conversation_participants"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "user_id", name="uq_conversation_user"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+
+    conversation = relationship("Conversation", back_populates="participants")
+    user = relationship("User", back_populates="conversation_participants")  # Assuming User has this relationship
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"))
+    sender_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    content = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_read = Column(Boolean, default=False)
+
+    conversation = relationship("Conversation", back_populates="messages")
+    sender = relationship("User", back_populates="sent_messages")  # Assuming User has this relationship
+

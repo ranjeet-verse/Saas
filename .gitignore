@@ -1,11 +1,34 @@
-backend/venv/
-backend/__pycache__/
-backend/.env
-backend/*.pyc
-backend/.gitignore
+git reset
+```
 
-# Frontend
-frontend/node_modules/
-frontend/build/
-frontend/.env
+### **Step 2: Update your `.gitignore`**
 
+Make sure your `.gitignore` file has `venv/` in it:
+```
+# Virtual Environment
+venv/
+env/
+ENV/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables
+.env
+.env.local
+
+# Database
+*.db
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node modules
+node_modules/
