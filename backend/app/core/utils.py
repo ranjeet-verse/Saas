@@ -5,18 +5,39 @@ from sqlalchemy.orm import Session
 from app.core import oauth2
 from ..database import get_db
 from ..models import models
+import hashlib
 
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Use only bcrypt to avoid compatibility issues
+pwd_context = CryptContext(
+    schemes=["bcrypt"],  
+    deprecated="auto"
+)
 
 
+def verify(plain_password: str, hashed_password: str) -> bool:
+    """
+    Verify a plain password against a hashed password.
+    Handles bcrypt's 72-byte limitation by truncating passwords.
+    """
+    # Truncate to 72 bytes to match bcrypt's limitation
+    # This ensures we don't get ValueError during verification
+    password_bytes = plain_password.encode('utf-8')[:72]
+    truncated_password = password_bytes.decode('utf-8', errors='ignore')
+    
+    return pwd_context.verify(truncated_password, hashed_password)
 
-def hash(password: str):
-    return pwd_context.hash(password)
 
-
-def verify(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+def hash(password: str) -> str:
+    """
+    Hash a password.
+    Handles bcrypt's 72-byte limitation by truncating passwords.
+    """
+    # Truncate to 72 bytes to match bcrypt's limitation
+    password_bytes = password.encode('utf-8')[:72]
+    truncated_password = password_bytes.decode('utf-8', errors='ignore')
+    
+    return pwd_context.hash(truncated_password)
 
 
 def create_refresh_token():
@@ -107,5 +128,3 @@ def update_project_progress(db: Session, project_id: int):
 
     # 4️⃣ Commit once
     # db.commit()
-
-

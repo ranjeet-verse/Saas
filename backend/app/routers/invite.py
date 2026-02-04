@@ -105,7 +105,14 @@ async def accept_invite(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User with this email already exists"
         )
+    if not invite.password or len(invite.password.strip()) == 0:
+        raise HTTPException(status_code=400, detail="Password cannot be empty")
     
+    if '\x00' in invite.password:
+        raise HTTPException(status_code=400, detail="Password contains invalid characters")
+    
+    if len(invite.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
     
     hashed_password = utils.hash(invite.password) 
 
