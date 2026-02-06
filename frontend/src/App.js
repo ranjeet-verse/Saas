@@ -1,87 +1,37 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import './App.css';
 
-const API_URL = 'http://localhost:8000';
-
-// ======================== UTILITY FUNCTIONS ========================
-
-const api = {
-  async request(endpoint, options = {}) {
-    const token = localStorage.getItem('access_token');
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...options.headers,
-    };
-
-    try {
-      const response = await fetch(`${API_URL}${endpoint}`, {
-        ...options,
-        headers,
-      });
-
-      if (response.status === 401) {
-        const refreshToken = localStorage.getItem('refresh_token');
-        if (refreshToken) {
-          const refreshResponse = await fetch(`${API_URL}/auth/refresh`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ refresh_token: refreshToken }),
-          });
-
-          if (refreshResponse.ok) {
-            const data = await refreshResponse.json();
-            localStorage.setItem('access_token', data.access_token);
-            return api.request(endpoint, options);
-          }
-        }
-        localStorage.clear();
-        window.location.href = '/';
-        return null;
-      }
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Request failed');
-      }
-
-      return response.status === 204 ? null : await response.json();
-    } catch (error) {
-      throw error;
-    }
-  },
-
-  get(endpoint) {
-    return this.request(endpoint);
-  },
-
-  post(endpoint, data) {
-    return this.request(endpoint, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  put(endpoint, data) {
-    return this.request(endpoint, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  },
-
-  delete(endpoint) {
-    return this.request(endpoint, { method: 'DELETE' });
-  },
-};
+import { api } from './lib/api';
+import { ToastProvider, useToast } from './lib/toast';
+import { SkeletonCard } from './components/Skeleton';
 
 // ======================== MAIN APP COMPONENT ========================
 
 function App() {
+  return (
+    <ToastProvider>
+      <AppInner />
+    </ToastProvider>
+  );
+}
+
+function AppInner() {
+  const toast = useToast();
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [currentView, setCurrentView] = useState('dashboard');
   const [acceptInviteToken, setAcceptInviteToken] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
   useEffect(() => {
     // Check for invite token in URL
@@ -136,8 +86,9 @@ function App() {
     }
     localStorage.clear();
     setUser(null);
-    setCurrentView('dashboard');
     setUnreadCount(0);
+    toast.info('Logged out');
+    navigate('/login');
   };
 
   if (loading) {
@@ -149,35 +100,144 @@ function App() {
     );
   }
 
-  if (!user) {
-    return (
-      <AuthScreen 
-        onLogin={setUser} 
-        acceptInviteToken={acceptInviteToken}
-        setAcceptInviteToken={setAcceptInviteToken}
+  return (
+    <Routes>
+      <Route
+        path="/login"
+        element={
+          user ? (
+            <Navigate to="/dashboard" replace />
+          ) : (
+            <AuthScreen
+              onLogin={(u) => {
+                setUser(u);
+                toast.success('Welcome!');
+                navigate('/dashboard');
+              }}
+              acceptInviteToken={acceptInviteToken}
+              setAcceptInviteToken={setAcceptInviteToken}
+            />
+          )
+        }
       />
-    );
-  }
+
+      <Route
+        path="/accept-invite"
+        element={
+          user ? (
+            <Navigate to="/dashboard" replace />
+          ) : (
+            <AuthScreen
+              onLogin={(u) => {
+                setUser(u);
+                toast.success('Invitation accepted');
+                navigate('/dashboard');
+              }}
+              acceptInviteToken={acceptInviteToken}
+              setAcceptInviteToken={setAcceptInviteToken}
+            />
+          )
+        }
+      />
+
+      <Route
+        path="/*"
+        element={
+          user ? (
+            <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+              <Sidebar
+                user={user}
+                logout={logout}
+                unreadCount={unreadCount}
+                collapsed={sidebarCollapsed}
+                setCollapsed={setSidebarCollapsed}
+                theme={theme}
+                setTheme={setTheme}
+              />
+              <main className="main-content">
+                <Routes>
+                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/dashboard" element={<DashboardView user={user} />} />
+                  <Route path="/projects" element={<ProjectsView user={user} />} />
+                  <Route path="/projects/:projectId" element={<ProjectDetailsRoute user={user} />} />
+                  <Route
+                    path="/messages"
+                    element={<MessagesView user={user} refreshUnreadCount={fetchUnreadCount} />}
+                  />
+                  <Route
+                    path="/messages/:conversationId"
+                    element={<MessagesView user={user} refreshUnreadCount={fetchUnreadCount} />}
+                  />
+                  {user.role === 'admin' && <Route path="/team" element={<UsersView user={user} />} />}
+                  {user.role === 'admin' && <Route path="/invites" element={<InvitesView user={user} />} />}
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </main>
+            </div>
+          ) : (
+            <Navigate to="/login" replace state={{ from: location.pathname }} />
+          )
+        }
+      />
+    </Routes>
+  );
+}
+
+function NotFound() {
+  return (
+    <div className="empty-state">
+      <div className="empty-icon">🧭</div>
+      <h3>Page not found</h3>
+      <p>That link doesn’t exist.</p>
+    </div>
+  );
+}
+
+function ProjectDetailsRoute({ user }) {
+  const { projectId } = useParams();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const [project, setProject] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      try {
+        const data = await api.get(`/projects/${projectId}`);
+        if (!cancelled) setProject(data);
+      } catch (e) {
+        toast.error(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, toast]);
+
+  if (loading) return <div className="view-loading"><div className="spinner"></div></div>;
+  if (!project) return null;
 
   return (
-    <div className="app">
-      <Sidebar
-        currentView={currentView}
-        setCurrentView={setCurrentView}
-        user={user}
-        logout={logout}
-        unreadCount={unreadCount}
-      />
-      <main className="main-content">
-        {currentView === 'dashboard' && <DashboardView user={user} />}
-        {currentView === 'projects' && <ProjectsView user={user} />}
-        {currentView === 'messages' && (
-          <MessagesView user={user} refreshUnreadCount={fetchUnreadCount} />
-        )}
-        {currentView === 'users' && user.role === 'admin' && <UsersView user={user} />}
-        {currentView === 'invites' && user.role === 'admin' && <InvitesView user={user} />}
-      </main>
-    </div>
+    <ProjectDetails
+      project={project}
+      onClose={() => navigate('/projects')}
+      onUpdate={() => {}}
+      onDelete={async (id) => {
+        try {
+          await api.delete(`/projects/${id}`);
+          toast.success('Project deleted');
+          navigate('/projects');
+        } catch (e) {
+          toast.error(e.message);
+        }
+      }}
+      user={user}
+    />
   );
 }
 
@@ -214,7 +274,7 @@ function AuthScreen({ onLogin, acceptInviteToken, setAcceptInviteToken }) {
         formBody.append('username', formData.email);
         formBody.append('password', formData.password);
 
-        const response = await fetch(`${API_URL}/auth/login`, {
+        const response = await fetch(`http://localhost:8000/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: formBody,
@@ -386,7 +446,20 @@ function AuthScreen({ onLogin, acceptInviteToken, setAcceptInviteToken }) {
 
 // ======================== SIDEBAR ========================
 
-function Sidebar({ currentView, setCurrentView, user, logout, unreadCount }) {
+function Sidebar({ user, logout, unreadCount, collapsed, setCollapsed, theme, setTheme }) {
+  // Backwards compatible props exist but routing drives navigation now
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const activeId = useMemo(() => {
+    const path = location.pathname;
+    if (path.startsWith('/projects')) return 'projects';
+    if (path.startsWith('/messages')) return 'messages';
+    if (path.startsWith('/team')) return 'users';
+    if (path.startsWith('/invites')) return 'invites';
+    return 'dashboard';
+  }, [location.pathname]);
+
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: '📊' },
     { id: 'projects', label: 'Projects', icon: '📁' },
@@ -408,6 +481,26 @@ function Sidebar({ currentView, setCurrentView, user, logout, unreadCount }) {
           <h3>SaaS Manager</h3>
           <span className="company-badge">PRO</span>
         </div>
+        <div className="sidebar-header-actions">
+          <button
+            className="icon-btn"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label="Toggle theme"
+            type="button"
+          >
+            {theme === 'dark' ? '🌙' : '☀️'}
+          </button>
+          <button
+            className="icon-btn"
+            onClick={() => setCollapsed(!collapsed)}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label="Toggle sidebar"
+            type="button"
+          >
+            {collapsed ? '»' : '«'}
+          </button>
+        </div>
       </div>
 
       <nav className="sidebar-nav">
@@ -416,8 +509,17 @@ function Sidebar({ currentView, setCurrentView, user, logout, unreadCount }) {
           {menuItems.map((item) => (
             <button
               key={item.id}
-              className={`nav-item ${currentView === item.id ? 'active' : ''}`}
-              onClick={() => setCurrentView(item.id)}
+              className={`nav-item ${activeId === item.id ? 'active' : ''}`}
+              onClick={() => {
+                const routeMap = {
+                  dashboard: '/dashboard',
+                  projects: '/projects',
+                  messages: '/messages',
+                  users: '/team',
+                  invites: '/invites',
+                };
+                navigate(routeMap[item.id] || '/dashboard');
+              }}
             >
               <span className="nav-icon">{item.icon}</span>
               <span className="nav-label">{item.label}</span>
@@ -493,7 +595,16 @@ function DashboardView({ user }) {
   };
 
   if (loading) {
-    return <div className="view-loading"><div className="spinner"></div></div>;
+    return (
+      <div className="dashboard-view">
+        <div className="stats-grid">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -561,6 +672,8 @@ function StatCard({ title, value, icon, color }) {
 // ======================== PROJECTS VIEW ========================
 
 function ProjectsView({ user }) {
+  const toast = useToast();
+  const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [selectedProject, setSelectedProject] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -589,19 +702,20 @@ function ProjectsView({ user }) {
       loadProjects();
       setShowCreateModal(false);
     } catch (error) {
-      alert('Error creating project: ' + error.message);
+      toast.error('Error creating project: ' + error.message);
     }
   };
 
   const deleteProject = async (projectId) => {
-    if (window.confirm('Are you sure you want to delete this project?')) {
-      try {
-        await api.delete(`/projects/${projectId}`);
-        loadProjects();
-        setSelectedProject(null);
-      } catch (error) {
-        alert('Error deleting project: ' + error.message);
-      }
+    if (!window.confirm('Are you sure you want to delete this project?')) return;
+    try {
+      await api.delete(`/projects/${projectId}`);
+      toast.success('Project deleted');
+      loadProjects();
+      setSelectedProject(null);
+      navigate('/projects');
+    } catch (error) {
+      toast.error('Error deleting project: ' + error.message);
     }
   };
 
@@ -639,7 +753,10 @@ function ProjectsView({ user }) {
                 <div
                   key={project.id}
                   className="project-card"
-                  onClick={() => setSelectedProject(project)}
+                  onClick={() => {
+                    setSelectedProject(project);
+                    navigate(`/projects/${project.id}`);
+                  }}
                 >
                   <div className="project-card-header">
                     <div className="project-icon">📁</div>
@@ -702,6 +819,7 @@ function ProjectsView({ user }) {
 // ======================== PROJECT DETAILS ========================
 
 function ProjectDetails({ project, onClose, onUpdate, onDelete, user }) {
+  const toast = useToast();
   const [tasks, setTasks] = useState([]);
   const [members, setMembers] = useState([]);
   const [showTaskModal, setShowTaskModal] = useState(false);
@@ -749,8 +867,9 @@ function ProjectDetails({ project, onClose, onUpdate, onDelete, user }) {
       setProjectInfo(updated);
       onUpdate();
       setShowEditModal(false);
+      toast.success('Project updated');
     } catch (error) {
-      alert('Error updating project: ' + error.message);
+      toast.error('Error updating project: ' + error.message);
     }
   };
 
@@ -761,7 +880,7 @@ function ProjectDetails({ project, onClose, onUpdate, onDelete, user }) {
       onUpdate();
       setShowTaskModal(false);
     } catch (error) {
-      alert('Error creating task: ' + error.message);
+      toast.error('Error creating task: ' + error.message);
     }
   };
 
@@ -771,19 +890,19 @@ function ProjectDetails({ project, onClose, onUpdate, onDelete, user }) {
       loadTasks();
       onUpdate();
     } catch (error) {
-      alert('Error updating task: ' + error.message);
+      toast.error('Error updating task: ' + error.message);
     }
   };
 
   const deleteTask = async (taskId) => {
-    if (window.confirm('Delete this task?')) {
-      try {
-        await api.delete(`/projects/${project.id}/task/${taskId}`);
-        loadTasks();
-        onUpdate();
-      } catch (error) {
-        alert('Error deleting task: ' + error.message);
-      }
+    if (!window.confirm('Delete this task?')) return;
+    try {
+      await api.delete(`/projects/${project.id}/task/${taskId}`);
+      toast.success('Task deleted');
+      loadTasks();
+      onUpdate();
+    } catch (error) {
+      toast.error('Error deleting task: ' + error.message);
     }
   };
 
@@ -793,18 +912,18 @@ function ProjectDetails({ project, onClose, onUpdate, onDelete, user }) {
       loadMembers();
       setShowMemberModal(false);
     } catch (error) {
-      alert('Error adding member: ' + error.message);
+      toast.error('Error adding member: ' + error.message);
     }
   };
 
   const removeMember = async (memberId) => {
-    if (window.confirm('Remove this member?')) {
-      try {
-        await api.delete(`/projects/${project.id}/members/${memberId}`);
-        loadMembers();
-      } catch (error) {
-        alert('Error removing member: ' + error.message);
-      }
+    if (!window.confirm('Remove this member?')) return;
+    try {
+      await api.delete(`/projects/${project.id}/members/${memberId}`);
+      toast.success('Member removed');
+      loadMembers();
+    } catch (error) {
+      toast.error('Error removing member: ' + error.message);
     }
   };
 
@@ -1030,6 +1149,7 @@ function TaskCard({ task, onUpdate, onDelete }) {
 // ======================== USERS VIEW ========================
 
 function UsersView({ user }) {
+  const toast = useToast();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -1051,22 +1171,30 @@ function UsersView({ user }) {
 
   const deleteUser = async (userId) => {
     if (userId === user.id) {
-      alert('You cannot delete yourself');
+      toast.error('You cannot delete yourself');
       return;
     }
 
-    if (window.confirm('Are you sure you want to remove this user?')) {
-      try {
-        await api.delete(`/user/delete/${userId}`);
-        loadUsers();
-      } catch (error) {
-        alert('Error deleting user: ' + error.message);
-      }
+    if (!window.confirm('Are you sure you want to remove this user?')) return;
+    try {
+      await api.delete(`/user/delete/${userId}`);
+      toast.success('User removed');
+      loadUsers();
+    } catch (error) {
+      toast.error('Error deleting user: ' + error.message);
     }
   };
 
   if (loading) {
-    return <div className="view-loading"><div className="spinner"></div></div>;
+    return (
+      <div className="users-view">
+        <div className="users-table">
+          <div style={{ padding: '16px' }}>
+            <SkeletonCard />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -1121,6 +1249,7 @@ function UsersView({ user }) {
 // ======================== INVITES VIEW ========================
 
 function InvitesView({ user }) {
+  const toast = useToast();
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -1131,10 +1260,10 @@ function InvitesView({ user }) {
         email: inviteData.email,
         role: inviteData.role,
       });
-      alert('✅ Invitation sent successfully!');
+      toast.success('Invitation sent');
       setShowInviteModal(false);
     } catch (error) {
-      alert('❌ Error: ' + error.message);
+      toast.error('Error: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -1196,6 +1325,9 @@ function InvitesView({ user }) {
 // ======================== MESSAGES VIEW ========================
 
 function MessagesView({ user, refreshUnreadCount }) {
+  const toast = useToast();
+  const navigate = useNavigate();
+  const params = useParams();
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -1223,6 +1355,13 @@ function MessagesView({ user, refreshUnreadCount }) {
       loadMessages(selectedConversation.id);
     }
   }, [selectedConversation]);
+
+  useEffect(() => {
+    if (params.conversationId && conversations.length > 0) {
+      const conv = conversations.find((c) => String(c.id) === String(params.conversationId));
+      if (conv) setSelectedConversation(conv);
+    }
+  }, [params.conversationId, conversations]);
 
   useEffect(() => {
     scrollToBottom();
@@ -1278,11 +1417,12 @@ function MessagesView({ user, refreshUnreadCount }) {
     try {
       const conversation = await api.post('/messages/conversations', { user_id: userId });
       setSelectedConversation(conversation);
+      navigate(`/messages/${conversation.id}`);
       loadConversations();
       setShowNewChat(false);
     } catch (error) {
       console.error('Error starting conversation:', error);
-      alert('Error starting conversation: ' + error.message);
+      toast.error('Error starting conversation: ' + error.message);
     }
   };
 
@@ -1298,7 +1438,7 @@ function MessagesView({ user, refreshUnreadCount }) {
       loadMessages(selectedConversation.id);
     } catch (error) {
       console.error('Error sending message:', error);
-      alert('Error sending message');
+      toast.error('Error sending message');
     }
   };
 
@@ -1307,7 +1447,20 @@ function MessagesView({ user, refreshUnreadCount }) {
   };
 
   if (loading) {
-    return <div className="view-loading"><div className="spinner"></div></div>;
+    return (
+      <div className="messages-view">
+        <div className="conversations-sidebar">
+          <div style={{ padding: '16px' }}>
+            <SkeletonCard />
+          </div>
+        </div>
+        <div className="messages-container">
+          <div style={{ padding: '16px' }}>
+            <SkeletonCard />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -1329,7 +1482,10 @@ function MessagesView({ user, refreshUnreadCount }) {
                   className={`conversation-item ${
                     selectedConversation?.id === conv.id ? 'active' : ''
                   }`}
-                  onClick={() => setSelectedConversation(conv)}
+                  onClick={() => {
+                    setSelectedConversation(conv);
+                    navigate(`/messages/${conv.id}`);
+                  }}
                 >
                   <div className="conversation-avatar">
                     {otherUser?.name?.charAt(0)?.toUpperCase() || 'U'}
