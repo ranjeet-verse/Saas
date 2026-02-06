@@ -22,8 +22,8 @@ async def invite_user(invite: schemas.CreateInvite,
                 db: Session = Depends(get_db), 
                 current_user: models.User = Depends(oauth2.get_current_user)):
 
-    print(f"DEBUG: Current user role: {current_user.role}")
-    print(f"DEBUG: Invited user role: {invite.role}")
+    # print(f"DEBUG: Current user role: {current_user.role}")
+    # print(f"DEBUG: Invited user role: {invite.role}")
 
     if current_user.role.lower() not in ["admin"]:
         raise HTTPException(
