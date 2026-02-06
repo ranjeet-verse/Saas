@@ -1,1623 +1,1722 @@
-// App.js - Fixed React App with FastAPI WebSocket Chat Integration
 import React, { useState, useEffect, useRef } from 'react';
+import './App.css';
 
-// --- API Configuration ---
-const API_BASE = 'http://localhost:8000';
-const WS_BASE = 'ws://localhost:8000';
+const API_URL = 'http://localhost:8000';
 
-// --- WebSocket Service for FastAPI backend ---
-class WebSocketService {
-  constructor() {
-    this.socket = null;
-    this.messageListeners = [];
-    this.connectionListeners = [];
-    this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 5;
-    this.reconnectDelay = 3000;
-    this.userId = null;
-  }
+// ======================== UTILITY FUNCTIONS ========================
 
-  connect(userId) {
-    this.userId = userId;
-    
-    try {
-      // Connect to FastAPI WebSocket endpoint (no token in URL per your backend)
-      this.socket = new WebSocket(`${WS_BASE}/messages/ws/${userId}`);
-      
-      this.socket.onopen = () => {
-        console.log('✅ WebSocket connected to FastAPI');
-        this.reconnectAttempts = 0;
-        this.connectionListeners.forEach(listener => listener(true));
-      };
-      
-      this.socket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log('📥 Received WebSocket message:', data);
-          this.messageListeners.forEach(listener => listener(data));
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
-        }
-      };
-      
-      this.socket.onclose = () => {
-        console.log('❌ WebSocket disconnected');
-        this.connectionListeners.forEach(listener => listener(false));
-        this.attemptReconnect();
-      };
-      
-      this.socket.onerror = (error) => {
-        console.error('WebSocket error:', error);
-      };
-    } catch (error) {
-      console.error('Error connecting to WebSocket:', error);
-    }
-  }
-  
-  attemptReconnect() {
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
-      this.reconnectAttempts++;
-      console.log(`🔄 Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-      
-      setTimeout(() => {
-        if (this.userId) {
-          this.connect(this.userId);
-        }
-      }, this.reconnectDelay);
-    }
-  }
-  
-  sendMessage(message) {
-    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify(message));
-      return true;
-    }
-    console.warn('⚠️ WebSocket is not connected');
-    return false;
-  }
-  
-  sendTyping(conversationId) {
-    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify({
-        type: "typing",
-        conversation_id: conversationId,
-        user_id: this.userId
-      }));
-      return true;
-    }
-    return false;
-  }
-  
-  addMessageListener(listener) {
-    this.messageListeners.push(listener);
-    return () => {
-      this.messageListeners = this.messageListeners.filter(l => l !== listener);
-    };
-  }
-  
-  addConnectionListener(listener) {
-    this.connectionListeners.push(listener);
-    return () => {
-      this.connectionListeners = this.connectionListeners.filter(l => l !== listener);
-    };
-  }
-  
-  disconnect() {
-    if (this.socket) {
-      this.socket.close();
-      this.socket = null;
-    }
-    this.messageListeners = [];
-    this.connectionListeners = [];
-  }
-}
-
-// Create singleton instance
-const webSocketService = new WebSocketService();
-
-// --- API Configuration ---
 const api = {
   async request(endpoint, options = {}) {
     const token = localStorage.getItem('access_token');
-    const headers = { 
-      'Content-Type': 'application/json', 
-      ...options.headers 
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...options.headers,
     };
-    
-    if (token && !options.skipAuth) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
 
     try {
-      const response = await fetch(`${API_BASE}${endpoint}`, { 
-        ...options, 
-        headers 
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        ...options,
+        headers,
       });
 
-      if (response.status === 401 && !options.skipAuth) {
+      if (response.status === 401) {
         const refreshToken = localStorage.getItem('refresh_token');
         if (refreshToken) {
-          try {
-            const refreshResponse = await fetch(`${API_BASE}/auth/refresh`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ refresh_token: refreshToken }),
-            });
-            
-            if (refreshResponse.ok) {
-              const data = await refreshResponse.json();
-              localStorage.setItem('access_token', data.access_token);
-              return api.request(endpoint, options);
-            }
-          } catch (e) {
-            console.error('Refresh token error:', e);
+          const refreshResponse = await fetch(`${API_URL}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: refreshToken }),
+          });
+
+          if (refreshResponse.ok) {
+            const data = await refreshResponse.json();
+            localStorage.setItem('access_token', data.access_token);
+            return api.request(endpoint, options);
           }
         }
         localStorage.clear();
         window.location.href = '/';
         return null;
       }
-      
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ detail: 'Request failed' }));
-        throw new Error(error.detail || `Request failed with status ${response.status}`);
-      }
-      
-      return response;
-    } catch (error) {
-      console.error('API Request Error:', error);
-      throw error;
-    }
-  },
 
-  async get(endpoint) { 
-    try {
-      const r = await this.request(endpoint); 
-      if (r.status === 204) return null;
-      const data = await r.json();
-      return data || [];
-    } catch (error) {
-      console.error('GET Error:', error);
-      throw error;
-    }
-  },
-
-  async post(endpoint, data, skipAuth = false) {
-    try {
-      const r = await this.request(endpoint, { 
-        method: 'POST', 
-        body: JSON.stringify(data), 
-        skipAuth 
-      });
-      if (r.status === 204) return null;
-      return r.json();
-    } catch (error) {
-      console.error('POST Error:', error);
-      throw error;
-    }
-  },
-
-  async put(endpoint, data) { 
-    try {
-      const r = await this.request(endpoint, { 
-        method: 'PUT', 
-        body: JSON.stringify(data) 
-      }); 
-      if (r.status === 204) return null;
-      return r.json();
-    } catch (error) {
-      console.error('PUT Error:', error);
-      throw error;
-    }
-  },
-
-  async delete(endpoint) { 
-    try {
-      await this.request(endpoint, { method: 'DELETE' });
-    } catch (error) {
-      console.error('DELETE Error:', error);
-      throw error;
-    }
-  },
-
-  async login(formData) {
-    try {
-      // FastAPI OAuth2PasswordRequestForm expects form data
-      const formBody = new URLSearchParams();
-      formBody.append('username', formData.email);
-      formBody.append('password', formData.password);
-      
-      const response = await fetch(`${API_BASE}/auth/login`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: formBody,
-      });
-      
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.detail || 'Invalid credentials');
+        throw new Error(error.detail || 'Request failed');
       }
-      
-      return response.json();
+
+      return response.status === 204 ? null : await response.json();
     } catch (error) {
-      console.error('Login Error:', error);
       throw error;
     }
   },
 
-  async signup(formData) {
-    return await this.post('/auth/admin', {
-      company_name: formData.company_name || 'My Company',
-      name: formData.name,
-      email: formData.email,
-      password: formData.password
-    }, true);
+  get(endpoint) {
+    return this.request(endpoint);
   },
 
-  async acceptInvite(token, formData) {
-    return await this.post(`/invite/accept/${token}`, {
-      name: formData.name,
-      password: formData.password
-    }, true);
+  post(endpoint, data) {
+    return this.request(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 
-  async getCurrentUser() {
-    return await this.get('/me');
+  put(endpoint, data) {
+    return this.request(endpoint, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
   },
 
-  // Chat APIs
-  async getConversations() {
-    return await this.get('/messages/conversations');
+  delete(endpoint) {
+    return this.request(endpoint, { method: 'DELETE' });
   },
-
-  async createConversation(userId) {
-    return await this.post('/messages/conversations', { user_id: userId });
-  },
-
-  async getMessages(conversationId, limit = 50, offset = 0) {
-    return await this.get(`/messages/conversations/${conversationId}/messages?limit=${limit}&offset=${offset}`);
-  },
-
-  async sendMessage(conversationId, content) {
-    return await this.post(`/messages/conversations/${conversationId}/messages`, { content });
-  },
-
-  async getUnreadCount() {
-    const response = await this.get('/messages/unread_count');
-    return response?.unread_count || 0;
-  }
 };
 
-// --- Reusable UI Components ---
-const Alert = ({ type, children, onClose }) => (
-  <div className={`p-4 rounded-lg mb-4 flex items-start gap-3 ${
-    type === 'error' ? 'bg-red-50 text-red-800 border border-red-200' : 
-    type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 
-    'bg-blue-50 text-blue-800 border border-blue-200'
-  }`}>
-    <div className="flex-1">{children}</div>
-    {onClose && (
-      <button 
-        onClick={onClose} 
-        className="opacity-70 hover:opacity-100 transition-opacity"
-      >
-        ✕
-      </button>
-    )}
-  </div>
-);
+// ======================== MAIN APP COMPONENT ========================
 
-const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
-  if (!isOpen) return null;
-  
-  const sizeClasses = {
-    sm: 'max-w-md',
-    md: 'max-w-lg',
-    lg: 'max-w-2xl',
-    xl: 'max-w-4xl',
-    'chat': 'max-w-4xl w-full h-[80vh]'
+function App() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [currentView, setCurrentView] = useState('dashboard');
+  const [acceptInviteToken, setAcceptInviteToken] = useState(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    // Check for invite token in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    if (token) {
+      setAcceptInviteToken(token);
+    }
+    checkAuth();
+  }, []);
+
+  const checkAuth = async () => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      try {
+        const userData = await api.post('/me');
+        setUser(userData);
+      } catch (error) {
+        localStorage.clear();
+      }
+    }
+    setLoading(false);
+  };
+
+  const fetchUnreadCount = async () => {
+    try {
+      const data = await api.get('/messages/unread_count');
+      if (data && typeof data.unread_count === 'number') {
+        setUnreadCount(data.unread_count);
+      } else {
+        setUnreadCount(0);
+      }
+    } catch (error) {
+      console.error('Error loading unread messages count:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchUnreadCount();
+    }
+  }, [user]);
+
+  const logout = async () => {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (refreshToken) {
+      try {
+        await api.post('/auth/logout', { refresh_token: refreshToken });
+      } catch (error) {
+        console.error('Logout error:', error);
+      }
+    }
+    localStorage.clear();
+    setUser(null);
+    setCurrentView('dashboard');
+    setUnreadCount(0);
+  };
+
+  if (loading) {
+    return (
+      <div className="loading-container">
+        <div className="spinner"></div>
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <AuthScreen 
+        onLogin={setUser} 
+        acceptInviteToken={acceptInviteToken}
+        setAcceptInviteToken={setAcceptInviteToken}
+      />
+    );
+  }
+
+  return (
+    <div className="app">
+      <Sidebar
+        currentView={currentView}
+        setCurrentView={setCurrentView}
+        user={user}
+        logout={logout}
+        unreadCount={unreadCount}
+      />
+      <main className="main-content">
+        {currentView === 'dashboard' && <DashboardView user={user} />}
+        {currentView === 'projects' && <ProjectsView user={user} />}
+        {currentView === 'messages' && (
+          <MessagesView user={user} refreshUnreadCount={fetchUnreadCount} />
+        )}
+        {currentView === 'users' && user.role === 'admin' && <UsersView user={user} />}
+        {currentView === 'invites' && user.role === 'admin' && <InvitesView user={user} />}
+      </main>
+    </div>
+  );
+}
+
+// ======================== AUTH SCREEN ========================
+
+function AuthScreen({ onLogin, acceptInviteToken, setAcceptInviteToken }) {
+  const [isLogin, setIsLogin] = useState(!acceptInviteToken);
+  const [isAcceptingInvite, setIsAcceptingInvite] = useState(!!acceptInviteToken);
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+    name: '',
+    company_name: '',
+  });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (acceptInviteToken) {
+      setIsAcceptingInvite(true);
+      setIsLogin(false);
+    }
+  }, [acceptInviteToken]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      if (isLogin) {
+        // Login
+        const formBody = new URLSearchParams();
+        formBody.append('username', formData.email);
+        formBody.append('password', formData.password);
+
+        const response = await fetch(`${API_URL}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: formBody,
+        });
+
+        if (!response.ok) throw new Error('Invalid credentials');
+
+        const data = await response.json();
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
+
+        const userData = await api.post('/me');
+        onLogin(userData);
+      } else if (isAcceptingInvite && acceptInviteToken) {
+        // Accept Invite
+        if (!formData.name || !formData.password) {
+          throw new Error('Please fill in all fields');
+        }
+
+        if (formData.password.length < 8) {
+          throw new Error('Password must be at least 8 characters long');
+        }
+
+        const data = await api.post(`/invite/accept/${acceptInviteToken}`, {
+          name: formData.name,
+          password: formData.password,
+        });
+
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
+        
+        // Clear the invite token and URL
+        setAcceptInviteToken(null);
+        window.history.replaceState({}, document.title, '/');
+        
+        onLogin(data.user);
+      } else {
+        // Signup (Admin)
+        const data = await api.post('/auth/admin', {
+          company_name: formData.company_name,
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+        });
+
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
+
+        const userData = await api.post('/me');
+        onLogin(userData);
+      }
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className={`bg-white rounded-lg shadow-2xl w-full ${sizeClasses[size]} overflow-hidden flex flex-col`}>
-        <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-          <h3 className="text-lg font-bold text-gray-900">{title}</h3>
-          <button 
-            onClick={onClose} 
-            className="p-2 hover:bg-gray-100 rounded transition-colors"
-          >
-            ✕
-          </button>
+    <div className="auth-screen">
+      <div className="auth-card">
+        <div className="auth-header">
+          <div className="logo">🚀 SaaS Manager</div>
+          <h1>
+            {isAcceptingInvite
+              ? 'Accept Your Invitation'
+              : isLogin
+              ? 'Welcome Back'
+              : 'Get Started'}
+          </h1>
+          <p>
+            {isAcceptingInvite
+              ? 'Complete your profile to join the team'
+              : isLogin
+              ? 'Sign in to your account'
+              : 'Create your company account'}
+          </p>
         </div>
-        <div className="flex-1 overflow-y-auto p-0">{children}</div>
+
+        <form onSubmit={handleSubmit} className="auth-form">
+          {!isLogin && !isAcceptingInvite && (
+            <div className="form-group">
+              <label>Company Name</label>
+              <input
+                type="text"
+                placeholder="Acme Inc."
+                value={formData.company_name}
+                onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                required
+              />
+            </div>
+          )}
+          {(isAcceptingInvite || (!isLogin && !isAcceptingInvite)) && (
+            <div className="form-group">
+              <label>Your Name</label>
+              <input
+                type="text"
+                placeholder="John Doe"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                required
+              />
+            </div>
+          )}
+          {!isAcceptingInvite && (
+            <div className="form-group">
+              <label>Email Address</label>
+              <input
+                type="email"
+                placeholder="you@example.com"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                required
+              />
+            </div>
+          )}
+          <div className="form-group">
+            <label>Password</label>
+            <input
+              type="password"
+              placeholder="••••••••"
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              required
+              minLength={8}
+            />
+            {!isLogin && (
+              <small className="form-hint">Minimum 8 characters</small>
+            )}
+          </div>
+          {error && <div className="error-message">{error}</div>}
+          <button type="submit" className="btn-primary btn-full" disabled={loading}>
+            {loading ? (
+              <span className="btn-loading">
+                <span className="spinner-small"></span> Loading...
+              </span>
+            ) : isAcceptingInvite ? (
+              'Accept Invitation & Join'
+            ) : isLogin ? (
+              'Sign In'
+            ) : (
+              'Create Account'
+            )}
+          </button>
+        </form>
+
+        {!isAcceptingInvite && (
+          <div className="auth-footer">
+            <p>
+              {isLogin ? "Don't have an account? " : 'Already have an account? '}
+              <button className="link-button" onClick={() => setIsLogin(!isLogin)}>
+                {isLogin ? 'Create one now' : 'Sign in here'}
+              </button>
+            </p>
+          </div>
+        )}
+
+        {isAcceptingInvite && (
+          <div className="auth-footer">
+            <p className="text-muted">
+              By accepting this invitation, you agree to join the organization.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
-};
+}
 
-const Button = ({ children, variant = 'primary', size = 'md', className = '', ...props }) => {
-  const baseClasses = 'font-medium rounded transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
-  
-  const variants = {
-    primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
-    secondary: 'bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-500',
-    danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
-    outline: 'border border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-gray-500',
-    success: 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500',
-    warning: 'bg-yellow-500 text-white hover:bg-yellow-600 focus:ring-yellow-400',
-  };
-  
-  const sizes = {
-    sm: 'px-3 py-1.5 text-sm',
-    md: 'px-4 py-2',
-    lg: 'px-6 py-3 text-lg',
-  };
-  
+// ======================== SIDEBAR ========================
+
+function Sidebar({ currentView, setCurrentView, user, logout, unreadCount }) {
+  const menuItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+    { id: 'projects', label: 'Projects', icon: '📁' },
+    { id: 'messages', label: 'Messages', icon: '💬' },
+  ];
+
+  if (user.role === 'admin') {
+    menuItems.push(
+      { id: 'users', label: 'Team', icon: '👥' },
+      { id: 'invites', label: 'Invites', icon: '✉️' }
+    );
+  }
+
   return (
-    <button 
-      className={`${baseClasses} ${variants[variant]} ${sizes[size]} ${className}`}
-      {...props}
-    >
-      {children}
-    </button>
+    <aside className="sidebar">
+      <div className="sidebar-header">
+        <div className="company-logo">SM</div>
+        <div className="company-info">
+          <h3>SaaS Manager</h3>
+          <span className="company-badge">PRO</span>
+        </div>
+      </div>
+
+      <nav className="sidebar-nav">
+        <div className="nav-section">
+          <span className="nav-section-label">MAIN NAVIGATION</span>
+          {menuItems.map((item) => (
+            <button
+              key={item.id}
+              className={`nav-item ${currentView === item.id ? 'active' : ''}`}
+              onClick={() => setCurrentView(item.id)}
+            >
+              <span className="nav-icon">{item.icon}</span>
+              <span className="nav-label">{item.label}</span>
+              {item.id === 'messages' && unreadCount > 0 && (
+                <span className="unread-badge nav-unread-badge">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      <div className="sidebar-footer">
+        <div className="user-profile">
+          <div className="user-avatar">{user.name.charAt(0).toUpperCase()}</div>
+          <div className="user-info">
+            <strong>{user.name}</strong>
+            <span className="user-role">{user.role}</span>
+          </div>
+        </div>
+        <button className="logout-btn" onClick={logout}>
+          <span className="logout-icon">🚪</span>
+          <span>Logout</span>
+        </button>
+      </div>
+    </aside>
   );
-};
+}
 
-const Card = ({ children, className = '', ...props }) => (
-  <div 
-    className={`bg-white rounded border border-gray-200 shadow-sm ${className}`}
-    {...props}
-  >
-    {children}
-  </div>
-);
+// ======================== DASHBOARD VIEW ========================
 
-const LoadingSpinner = ({ size = 'md' }) => {
-  const sizeClasses = {
-    sm: 'w-4 h-4',
-    md: 'w-6 h-6',
-    lg: 'w-8 h-8'
+function DashboardView({ user }) {
+  const [stats, setStats] = useState({
+    totalProjects: 0,
+    activeTasks: 0,
+    teamMembers: 0,
+    completionRate: 0,
+  });
+  const [recentProjects, setRecentProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      const projects = await api.get('/projects/');
+      setStats((prev) => ({ ...prev, totalProjects: projects.length }));
+      setRecentProjects(projects.slice(0, 3));
+
+      let totalTasks = 0;
+      let completedTasks = 0;
+      for (const project of projects) {
+        const tasks = await api.get(`/projects/${project.id}/task`);
+        totalTasks += tasks.length;
+        completedTasks += tasks.filter((t) => t.status === 'done').length;
+      }
+      setStats((prev) => ({
+        ...prev,
+        activeTasks: totalTasks,
+        completionRate: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
+      }));
+
+      const users = await api.get('/user/');
+      setStats((prev) => ({ ...prev, teamMembers: users.length }));
+    } catch (error) {
+      console.error('Error loading dashboard:', error);
+    } finally {
+      setLoading(false);
+    }
   };
-  
+
+  if (loading) {
+    return <div className="view-loading"><div className="spinner"></div></div>;
+  }
+
   return (
-    <div className={`${sizeClasses[size]} animate-spin text-blue-600`}>
-      ⟳
+    <div className="dashboard-view">
+      <div className="page-header">
+        <h1>Dashboard</h1>
+        <p>Welcome back, {user.name}! Here's your overview.</p>
+      </div>
+
+      <div className="stats-grid">
+        <StatCard title="Active Projects" value={stats.totalProjects} icon="📁" color="#4A6FA5" />
+        <StatCard title="Total Tasks" value={stats.activeTasks} icon="✅" color="#66BB6A" />
+        <StatCard title="Team Members" value={stats.teamMembers} icon="👥" color="#FFA726" />
+        <StatCard
+          title="Completion Rate"
+          value={`${stats.completionRate}%`}
+          icon="📈"
+          color="#AB47BC"
+        />
+      </div>
+
+      <div className="dashboard-content">
+        <div className="dashboard-section">
+          <div className="section-header">
+            <h2>Recent Projects</h2>
+          </div>
+          {recentProjects.length > 0 ? (
+            <div className="projects-mini-list">
+              {recentProjects.map((project) => (
+                <div key={project.id} className="project-mini-card">
+                  <div className="project-mini-header">
+                    <h4>{project.name}</h4>
+                    <span className="progress-badge">{project.progress}%</span>
+                  </div>
+                  <p>{project.description}</p>
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{ width: `${project.progress}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="empty-text">No projects yet. Create your first project!</p>
+          )}
+        </div>
+      </div>
     </div>
   );
-};
+}
 
-const LoadingOverlay = () => (
-  <div className="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center">
-    <div className="text-center">
-      <LoadingSpinner size="lg" />
-      <p className="mt-3 text-gray-600">Loading...</p>
+function StatCard({ title, value, icon, color }) {
+  return (
+    <div className="stat-card">
+      <div className="stat-icon" style={{ backgroundColor: color }}>
+        {icon}
+      </div>
+      <div className="stat-content">
+        <h3>{value}</h3>
+        <p>{title}</p>
+      </div>
     </div>
-  </div>
-);
+  );
+}
 
-// --- User Avatar Component ---
-const UserAvatar = ({ user, size = 'md', onClick, showChat = true }) => {
-  const sizeClasses = {
-    sm: 'w-6 h-6 text-xs',
-    md: 'w-8 h-8 text-sm',
-    lg: 'w-10 h-10 text-base',
-    xl: 'w-12 h-12 text-lg'
+// ======================== PROJECTS VIEW ========================
+
+function ProjectsView({ user }) {
+  const [projects, setProjects] = useState([]);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadProjects();
+  }, [searchTerm]);
+
+  const loadProjects = async () => {
+    setLoading(true);
+    try {
+      const data = await api.get(`/projects/?search=${searchTerm}`);
+      setProjects(data);
+    } catch (error) {
+      console.error('Error loading projects:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleClick = (e) => {
-    e.stopPropagation();
-    if (onClick) {
-      onClick(user);
+  const createProject = async (projectData) => {
+    try {
+      await api.post('/projects/', projectData);
+      loadProjects();
+      setShowCreateModal(false);
+    } catch (error) {
+      alert('Error creating project: ' + error.message);
+    }
+  };
+
+  const deleteProject = async (projectId) => {
+    if (window.confirm('Are you sure you want to delete this project?')) {
+      try {
+        await api.delete(`/projects/${projectId}`);
+        loadProjects();
+        setSelectedProject(null);
+      } catch (error) {
+        alert('Error deleting project: ' + error.message);
+      }
     }
   };
 
   return (
-    <div className="relative group">
-      <button
-        onClick={handleClick}
-        className={`${sizeClasses[size]} bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-full flex items-center justify-center font-medium hover:opacity-90 transition-opacity`}
-        title={user?.name}
-      >
-        {user?.name?.[0]?.toUpperCase() || 'U'}
-      </button>
-      
-      {showChat && (
-        <div className="absolute -bottom-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <div className="bg-blue-500 text-white p-1 rounded-full text-xs">
-            💬
-          </div>
+    <div className="projects-view">
+      <div className="view-header">
+        <div className="header-content">
+          <h1>Projects</h1>
+          <p>Manage and track your team's projects</p>
         </div>
+        <div className="header-actions">
+          <div className="search-box">
+            <input
+              type="text"
+              placeholder="Search projects..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <span className="search-icon">🔍</span>
+          </div>
+          <button onClick={() => setShowCreateModal(true)} className="btn-primary">
+            <span className="btn-icon">+</span>
+            Create Project
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="view-loading"><div className="spinner"></div></div>
+      ) : (
+        <div className="projects-layout">
+          <div className="projects-grid">
+            {projects.length > 0 ? (
+              projects.map((project) => (
+                <div
+                  key={project.id}
+                  className="project-card"
+                  onClick={() => setSelectedProject(project)}
+                >
+                  <div className="project-card-header">
+                    <div className="project-icon">📁</div>
+                    <div className="project-title">
+                      <h3>{project.name}</h3>
+                      <span className="project-status">Active</span>
+                    </div>
+                  </div>
+                  <p className="project-description">{project.description}</p>
+                  <div className="project-progress">
+                    <div className="progress-info">
+                      <span>Progress</span>
+                      <span>{project.progress}%</span>
+                    </div>
+                    <div className="progress-bar">
+                      <div
+                        className="progress-fill"
+                        style={{ width: `${project.progress}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                  <div className="project-footer">
+                    <span className="project-date">
+                      {new Date(project.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="empty-state">
+                <div className="empty-icon">📁</div>
+                <h3>No projects found</h3>
+                <p>Create your first project to get started</p>
+                <button onClick={() => setShowCreateModal(true)} className="btn-primary">
+                  Create Project
+                </button>
+              </div>
+            )}
+          </div>
+
+          {selectedProject && (
+            <ProjectDetails
+              project={selectedProject}
+              onClose={() => setSelectedProject(null)}
+              onUpdate={loadProjects}
+              onDelete={deleteProject}
+              user={user}
+            />
+          )}
+        </div>
+      )}
+
+      {showCreateModal && (
+        <CreateProjectModal onClose={() => setShowCreateModal(false)} onCreate={createProject} />
       )}
     </div>
   );
-};
+}
 
-// --- Chat Window Component ---
-const ChatWindow = ({ isOpen, onClose, otherUser, currentUser }) => {
-  const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
-  const [conversation, setConversation] = useState(null);
-  const [isTyping, setIsTyping] = useState(false);
-  const messagesEndRef = useRef(null);
-  const typingTimeoutRef = useRef(null);
+// ======================== PROJECT DETAILS ========================
+
+function ProjectDetails({ project, onClose, onUpdate, onDelete, user }) {
+  const [tasks, setTasks] = useState([]);
+  const [members, setMembers] = useState([]);
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [showMemberModal, setShowMemberModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [activeTab, setActiveTab] = useState('tasks');
+  const [loading, setLoading] = useState(true);
+  const [projectInfo, setProjectInfo] = useState(project);
 
   useEffect(() => {
-    if (isOpen && otherUser && currentUser) {
-      initializeConversation();
-      
-      // Listen for WebSocket messages
-      const unsubscribe = webSocketService.addMessageListener((data) => {
-        console.log('📩 Chat window received message:', data);
-        if (data.type === 'message' && data.message?.conversation_id === conversation?.id) {
-          setMessages(prev => {
-            // Avoid duplicates
-            const exists = prev.some(m => m.id === data.message.id);
-            if (exists) return prev;
-            
-            return [...prev, {
-              id: data.message.id,
-              content: data.message.content,
-              sender_id: data.message.sender_id,
-              conversation_id: data.message.conversation_id,
-              created_at: data.message.created_at,
-              is_read: false
-            }];
-          });
-        } else if (data.type === 'typing' && data.conversation_id === conversation?.id && data.user_id !== currentUser.id) {
-          setIsTyping(true);
-          clearTimeout(typingTimeoutRef.current);
-          typingTimeoutRef.current = setTimeout(() => {
-            setIsTyping(false);
-          }, 2000);
-        }
-      });
-      
-      // Listen for connection status
-      const connUnsubscribe = webSocketService.addConnectionListener(setIsConnected);
-      
-      return () => {
-        unsubscribe();
-        connUnsubscribe();
-        clearTimeout(typingTimeoutRef.current);
-      };
+    loadData();
+  }, [project.id]);
+
+  useEffect(() => {
+    setProjectInfo(project);
+  }, [project]);
+
+  const loadData = async () => {
+    setLoading(true);
+    await Promise.all([loadTasks(), loadMembers()]);
+    setLoading(false);
+  };
+
+  const loadTasks = async () => {
+    try {
+      const data = await api.get(`/projects/${project.id}/task`);
+      setTasks(data);
+    } catch (error) {
+      console.error('Error loading tasks:', error);
     }
-  }, [isOpen, otherUser, currentUser, conversation?.id]);
+  };
+
+  const loadMembers = async () => {
+    try {
+      const data = await api.get(`/projects/${project.id}/members`);
+      setMembers(data);
+    } catch (error) {
+      console.error('Error loading members:', error);
+    }
+  };
+
+  const handleProjectUpdate = async (updates) => {
+    try {
+      const updated = await api.put(`/projects/${project.id}`, updates);
+      setProjectInfo(updated);
+      onUpdate();
+      setShowEditModal(false);
+    } catch (error) {
+      alert('Error updating project: ' + error.message);
+    }
+  };
+
+  const createTask = async (taskData) => {
+    try {
+      await api.post(`/projects/${project.id}/task`, taskData);
+      loadTasks();
+      onUpdate();
+      setShowTaskModal(false);
+    } catch (error) {
+      alert('Error creating task: ' + error.message);
+    }
+  };
+
+  const updateTask = async (taskId, updates) => {
+    try {
+      await api.put(`/projects/${project.id}/task/${taskId}`, updates);
+      loadTasks();
+      onUpdate();
+    } catch (error) {
+      alert('Error updating task: ' + error.message);
+    }
+  };
+
+  const deleteTask = async (taskId) => {
+    if (window.confirm('Delete this task?')) {
+      try {
+        await api.delete(`/projects/${project.id}/task/${taskId}`);
+        loadTasks();
+        onUpdate();
+      } catch (error) {
+        alert('Error deleting task: ' + error.message);
+      }
+    }
+  };
+
+  const addMember = async (memberData) => {
+    try {
+      await api.post(`/projects/${project.id}/members`, memberData);
+      loadMembers();
+      setShowMemberModal(false);
+    } catch (error) {
+      alert('Error adding member: ' + error.message);
+    }
+  };
+
+  const removeMember = async (memberId) => {
+    if (window.confirm('Remove this member?')) {
+      try {
+        await api.delete(`/projects/${project.id}/members/${memberId}`);
+        loadMembers();
+      } catch (error) {
+        alert('Error removing member: ' + error.message);
+      }
+    }
+  };
+
+  return (
+    <div className="project-details-panel">
+      <div className="panel-header">
+        <button className="panel-close" onClick={onClose}>
+          ×
+        </button>
+        <h2>{projectInfo?.name || project.name}</h2>
+        <div className="panel-actions">
+          <button onClick={() => setShowTaskModal(true)} className="btn-primary">
+            + Add Task
+          </button>
+          <button onClick={() => setShowEditModal(true)} className="btn-secondary">
+            Edit Project
+          </button>
+          <button onClick={() => onDelete(project.id)} className="btn-danger">
+            Delete Project
+          </button>
+        </div>
+      </div>
+
+      <div className="panel-content">
+        <div className="project-info">
+          <p>{projectInfo?.description || project.description}</p>
+          <div className="project-meta">
+            <span className="meta-item">
+              <strong>Progress:</strong> {project.progress}%
+            </span>
+            <span className="meta-item">
+              <strong>Tasks:</strong> {tasks.length}
+            </span>
+            <span className="meta-item">
+              <strong>Members:</strong> {members.length}
+            </span>
+          </div>
+        </div>
+
+        <div className="panel-tabs">
+          {['tasks', 'members'].map((tab) => (
+            <button
+              key={tab}
+              className={`tab-button ${activeTab === tab ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        {loading ? (
+          <div className="panel-loading"><div className="spinner"></div></div>
+        ) : (
+          <>
+            {activeTab === 'tasks' && (
+              <div className="tasks-board">
+                {['todo', 'in_progress', 'done'].map((status) => (
+                  <div key={status} className="task-column">
+                    <div className="column-header">
+                      <h3>{status.replace('_', ' ').toUpperCase()}</h3>
+                      <span className="task-count">
+                        {tasks.filter((t) => t.status === status).length}
+                      </span>
+                    </div>
+                    <div className="task-list">
+                      {tasks
+                        .filter((task) => task.status === status)
+                        .map((task) => (
+                          <TaskCard
+                            key={task.id}
+                            task={task}
+                            onUpdate={updateTask}
+                            onDelete={deleteTask}
+                          />
+                        ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activeTab === 'members' && (
+              <div className="members-grid">
+                {members.map((member) => (
+                  <div key={member.id} className="member-card">
+                    <div className="member-avatar">
+                      {member.user_name?.charAt(0).toUpperCase() || 'U'}
+                    </div>
+                    <div className="member-info">
+                      <strong>{member.user_name}</strong>
+                      <span>{member.user_email}</span>
+                      <span className="member-role">{member.role}</span>
+                    </div>
+                    <button onClick={() => removeMember(member.id)} className="btn-icon-danger">
+                      🗑️
+                    </button>
+                  </div>
+                ))}
+                <button onClick={() => setShowMemberModal(true)} className="add-member-card">
+                  <span className="add-icon">+</span>
+                  <span>Add Member</span>
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {showTaskModal && (
+        <CreateTaskModal onClose={() => setShowTaskModal(false)} onCreate={createTask} />
+      )}
+
+      {showMemberModal && (
+        <AddMemberModal
+          projectId={project.id}
+          onClose={() => setShowMemberModal(false)}
+          onAdd={addMember}
+        />
+      )}
+
+      {showEditModal && (
+        <EditProjectModal
+          onClose={() => setShowEditModal(false)}
+          onSave={handleProjectUpdate}
+          initialData={{
+            name: projectInfo?.name || project.name || '',
+            description: projectInfo?.description || project.description || '',
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ======================== TASK CARD ========================
+
+function TaskCard({ task, onUpdate, onDelete }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editData, setEditData] = useState({
+    title: task.title,
+    description: task.description,
+    status: task.status,
+    priority: task.priority,
+  });
+
+  const handleSave = () => {
+    onUpdate(task.id, editData);
+    setIsEditing(false);
+  };
+
+  const priorityColors = {
+    low: '#66BB6A',
+    medium: '#FFA726',
+    high: '#EF5350',
+  };
+
+  if (isEditing) {
+    return (
+      <div className="task-card editing">
+        <input
+          type="text"
+          value={editData.title}
+          onChange={(e) => setEditData({ ...editData, title: e.target.value })}
+          placeholder="Task title"
+        />
+        <textarea
+          value={editData.description}
+          onChange={(e) => setEditData({ ...editData, description: e.target.value })}
+          placeholder="Description"
+          rows="2"
+        />
+        <select
+          value={editData.priority}
+          onChange={(e) => setEditData({ ...editData, priority: e.target.value })}
+        >
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+        <select
+          value={editData.status}
+          onChange={(e) => setEditData({ ...editData, status: e.target.value })}
+        >
+          <option value="todo">To Do</option>
+          <option value="in_progress">In Progress</option>
+          <option value="done">Done</option>
+        </select>
+        <div className="edit-actions">
+          <button onClick={handleSave} className="btn-primary btn-sm">
+            Save
+          </button>
+          <button onClick={() => setIsEditing(false)} className="btn-text btn-sm">
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="task-card" style={{ borderLeft: `4px solid ${priorityColors[task.priority]}` }}>
+      <div className="task-header">
+        <h4>{task.title}</h4>
+        <div className="task-actions">
+          <button onClick={() => setIsEditing(true)} className="btn-icon" title="Edit">
+            ✏️
+          </button>
+          <button onClick={() => onDelete(task.id)} className="btn-icon" title="Delete">
+            🗑️
+          </button>
+        </div>
+      </div>
+      {task.description && <p className="task-description">{task.description}</p>}
+      <div className="task-footer">
+        <span className={`priority-badge priority-${task.priority}`}>{task.priority}</span>
+        <span className="task-date">{new Date(task.created_at).toLocaleDateString()}</span>
+      </div>
+    </div>
+  );
+}
+
+// ======================== USERS VIEW ========================
+
+function UsersView({ user }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    setLoading(true);
+    try {
+      const data = await api.get('/user/');
+      setUsers(data);
+    } catch (error) {
+      console.error('Error loading users:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteUser = async (userId) => {
+    if (userId === user.id) {
+      alert('You cannot delete yourself');
+      return;
+    }
+
+    if (window.confirm('Are you sure you want to remove this user?')) {
+      try {
+        await api.delete(`/user/delete/${userId}`);
+        loadUsers();
+      } catch (error) {
+        alert('Error deleting user: ' + error.message);
+      }
+    }
+  };
+
+  if (loading) {
+    return <div className="view-loading"><div className="spinner"></div></div>;
+  }
+
+  return (
+    <div className="users-view">
+      <div className="view-header">
+        <div className="header-content">
+          <h1>Team Management</h1>
+          <p>Manage your team members and their roles</p>
+        </div>
+      </div>
+
+      <div className="users-table">
+        <div className="table-header">
+          <div className="table-cell">User</div>
+          <div className="table-cell">Role</div>
+          <div className="table-cell">Status</div>
+          <div className="table-cell">Joined</div>
+          <div className="table-cell">Actions</div>
+        </div>
+        {users.map((u) => (
+          <div key={u.id} className="table-row">
+            <div className="table-cell user-info">
+              <div className="user-avatar">{u.name.charAt(0).toUpperCase()}</div>
+              <div>
+                <strong>{u.name}</strong>
+                <p>{u.email}</p>
+              </div>
+            </div>
+            <div className="table-cell">
+              <span className={`role-badge role-${u.role}`}>{u.role}</span>
+            </div>
+            <div className="table-cell">
+              <span className={`status-badge ${u.is_active ? 'active' : 'inactive'}`}>
+                {u.is_active ? 'Active' : 'Inactive'}
+              </span>
+            </div>
+            <div className="table-cell">{new Date(u.created_at).toLocaleDateString()}</div>
+            <div className="table-cell">
+              {u.id !== user.id && (
+                <button onClick={() => deleteUser(u.id)} className="btn-danger btn-sm">
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ======================== INVITES VIEW ========================
+
+function InvitesView({ user }) {
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const sendInvite = async (inviteData) => {
+    setLoading(true);
+    try {
+      await api.post('/invite/', {
+        email: inviteData.email,
+        role: inviteData.role,
+      });
+      alert('✅ Invitation sent successfully!');
+      setShowInviteModal(false);
+    } catch (error) {
+      alert('❌ Error: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="invites-view">
+      <div className="view-header">
+        <div className="header-content">
+          <h1>Invite Users</h1>
+          <p>Send invitations to new team members</p>
+        </div>
+        <button onClick={() => setShowInviteModal(true)} className="btn-primary">
+          <span className="btn-icon">+</span>
+          Send Invite
+        </button>
+      </div>
+
+      <div className="invites-content">
+        <div className="info-card">
+          <h3>📧 How Invitations Work</h3>
+          <ul>
+            <li>
+              <strong>7-day validity:</strong> Invitations expire after 7 days
+            </li>
+            <li>
+              <strong>Secure onboarding:</strong> Recipients set their own password
+            </li>
+            <li>
+              <strong>Role-based access:</strong> Assign Admin, Editor, Viewer, or Member roles
+            </li>
+            <li>
+              <strong>Single use:</strong> Each invitation can only be used once
+            </li>
+          </ul>
+        </div>
+
+        <div className="empty-state">
+          <div className="empty-icon">✉️</div>
+          <h3>Invite team members</h3>
+          <p>Send email invitations to collaborate on your projects</p>
+          <button onClick={() => setShowInviteModal(true)} className="btn-primary">
+            Send Your First Invite
+          </button>
+        </div>
+      </div>
+
+      {showInviteModal && (
+        <SendInviteModal
+          onClose={() => setShowInviteModal(false)}
+          onSend={sendInvite}
+          loading={loading}
+        />
+      )}
+    </div>
+  );
+}
+
+// ======================== MESSAGES VIEW ========================
+
+function MessagesView({ user, refreshUnreadCount }) {
+  const [conversations, setConversations] = useState([]);
+  const [selectedConversation, setSelectedConversation] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [users, setUsers] = useState([]);
+  const [showNewChat, setShowNewChat] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const messagesEndRef = useRef(null);
+  const wsRef = useRef(null);
+
+  useEffect(() => {
+    loadConversations();
+    loadUsers();
+    connectWebSocket();
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (selectedConversation) {
+      loadMessages(selectedConversation.id);
+    }
+  }, [selectedConversation]);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
-  const initializeConversation = async () => {
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const connectWebSocket = () => {
+    const token = localStorage.getItem('access_token');
+    // Note: WebSocket connection would require authentication
+    // For now, we'll poll for new messages
+  };
+
+  const loadConversations = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      // Get or create conversation
-      const conversations = await api.getConversations();
-      let existingConv = conversations.find(conv => 
-        conv.participants?.some(p => p.user_id === otherUser.id) && 
-        conv.participants?.some(p => p.user_id === currentUser.id)
-      );
-      
-      if (!existingConv) {
-        existingConv = await api.createConversation(otherUser.id);
+      const data = await api.get('/messages/conversations');
+      setConversations(data);
+      if (refreshUnreadCount) {
+        refreshUnreadCount();
       }
-      
-      setConversation(existingConv);
-      
-      // Load messages
-      await loadMessages(existingConv.id);
     } catch (error) {
-      console.error('Failed to initialize conversation:', error);
+      console.error('Error loading conversations:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadUsers = async () => {
+    try {
+      const data = await api.get('/user/');
+      setUsers(data.filter((u) => u.id !== user.id));
+    } catch (error) {
+      console.error('Error loading users:', error);
     }
   };
 
   const loadMessages = async (conversationId) => {
     try {
-      const messagesData = await api.getMessages(conversationId, 50, 0);
-      setMessages(messagesData || []);
+      const data = await api.get(`/messages/conversations/${conversationId}/messages`);
+      setMessages(data);
+      if (refreshUnreadCount) {
+        refreshUnreadCount();
+      }
     } catch (error) {
-      console.error('Failed to load messages:', error);
+      console.error('Error loading messages:', error);
     }
   };
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const handleTyping = () => {
-    if (conversation) {
-      webSocketService.sendTyping(conversation.id);
-    }
-  };
-
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !conversation) return;
-
-    const messageContent = newMessage.trim();
-    setNewMessage('');
-
+  const startConversation = async (userId) => {
     try {
-      // Send via API (backend will broadcast via WebSocket)
-      const sentMessage = await api.sendMessage(conversation.id, messageContent);
-      
-      // Add to local state if not already added by WebSocket
-      setMessages(prev => {
-        const exists = prev.some(m => m.id === sentMessage.id);
-        if (exists) return prev;
-        return [...prev, sentMessage];
-      });
-    } catch (error) {
-      console.error('Failed to send message:', error);
-      setNewMessage(messageContent); // Restore message on error
-    }
-  };
-
-  const formatTime = (timestamp) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const formatDate = (timestamp) => {
-    const date = new Date(timestamp);
-    const today = new Date();
-    
-    if (date.toDateString() === today.toDateString()) {
-      return 'Today';
-    }
-    
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    if (date.toDateString() === yesterday.toDateString()) {
-      return 'Yesterday';
-    }
-    
-    return date.toLocaleDateString();
-  };
-
-  // Group messages by date
-  const groupedMessages = messages.reduce((groups, message) => {
-    const date = formatDate(message.created_at);
-    if (!groups[date]) {
-      groups[date] = [];
-    }
-    groups[date].push(message);
-    return groups;
-  }, {});
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Chat with ${otherUser?.name}`} size="chat">
-      <div className="flex flex-col h-full">
-        {/* Chat Header */}
-        <div className="p-4 border-b border-gray-200 bg-gray-50">
-          <div className="flex items-center gap-3">
-            <UserAvatar user={otherUser} size="lg" showChat={false} />
-            <div className="flex-1">
-              <h3 className="font-semibold text-gray-900">{otherUser?.name}</h3>
-              <div className="flex items-center gap-2 mt-1">
-                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-400'}`} />
-                <span className="text-xs text-gray-500">
-                  {isConnected ? 'Online' : 'Offline'}
-                </span>
-                {isTyping && (
-                  <span className="text-xs text-blue-600 italic ml-2">
-                    typing...
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
-          {loading ? (
-            <div className="flex items-center justify-center h-full">
-              <LoadingSpinner />
-            </div>
-          ) : messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-500">
-              <div className="w-12 h-12 mb-3 opacity-50">💬</div>
-              <p>No messages yet</p>
-              <p className="text-sm mt-1">Start a conversation with {otherUser?.name}</p>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {Object.entries(groupedMessages).map(([date, dateMessages]) => (
-                <div key={date}>
-                  <div className="flex justify-center mb-4">
-                    <span className="px-3 py-1 bg-gray-200 text-gray-700 text-xs rounded-full">
-                      {date}
-                    </span>
-                  </div>
-                  
-                  {dateMessages.map((message) => {
-                    const isOwnMessage = message.sender_id === currentUser.id;
-                    
-                    return (
-                      <div
-                        key={message.id}
-                        className={`flex mb-3 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <div
-                          className={`max-w-[70%] rounded-2xl px-4 py-2 ${
-                            isOwnMessage
-                              ? 'bg-blue-600 text-white rounded-tr-none'
-                              : 'bg-white border border-gray-200 rounded-tl-none'
-                          }`}
-                        >
-                          <p className="text-sm break-words">{message.content}</p>
-                          <p className={`text-xs mt-1 ${isOwnMessage ? 'text-blue-200' : 'text-gray-500'}`}>
-                            {formatTime(message.created_at)}
-                            {isOwnMessage && message.is_read && (
-                              <span className="ml-1">✓✓</span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
-          )}
-        </div>
-
-        {/* Message Input */}
-        <div className="p-4 border-t border-gray-200 bg-white">
-          <form onSubmit={handleSendMessage} className="flex gap-2">
-            <input
-              type="text"
-              value={newMessage}
-              onChange={(e) => {
-                setNewMessage(e.target.value);
-                handleTyping();
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendMessage(e);
-                }
-              }}
-              placeholder="Type a message..."
-              className="flex-1 px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              disabled={!isConnected || !conversation}
-            />
-            
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={!newMessage.trim() || !isConnected || !conversation}
-            >
-              Send
-            </Button>
-          </form>
-          
-          {!isConnected && (
-            <div className="mt-2 text-xs text-amber-600 flex items-center gap-1">
-              ⚠️ Connecting to chat server...
-            </div>
-          )}
-        </div>
-      </div>
-    </Modal>
-  );
-};
-
-// --- Chat Sidebar ---
-const ChatSidebar = ({ isOpen, onClose, currentUser, users = [] }) => {
-  const [search, setSearch] = useState('');
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [conversations, setConversations] = useState([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (isOpen && currentUser) {
+      const conversation = await api.post('/messages/conversations', { user_id: userId });
+      setSelectedConversation(conversation);
       loadConversations();
-      loadUnreadCount();
-      
-      // Listen for new messages
-      const unsubscribe = webSocketService.addMessageListener((data) => {
-        if (data.type === 'message') {
-          loadConversations();
-          loadUnreadCount();
-        }
-      });
-
-      return unsubscribe;
-    }
-  }, [isOpen, currentUser]);
-
-  const loadConversations = async () => {
-    setLoading(true);
-    try {
-      const convs = await api.getConversations();
-      setConversations(convs || []);
+      setShowNewChat(false);
     } catch (error) {
-      console.error('Failed to load conversations:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error starting conversation:', error);
+      alert('Error starting conversation: ' + error.message);
     }
   };
 
-  const loadUnreadCount = async () => {
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !selectedConversation) return;
+
     try {
-      const count = await api.getUnreadCount();
-      setUnreadCount(count);
+      await api.post(`/messages/conversations/${selectedConversation.id}/messages`, {
+        content: newMessage,
+      });
+      setNewMessage('');
+      loadMessages(selectedConversation.id);
     } catch (error) {
-      console.error('Failed to load unread count:', error);
+      console.error('Error sending message:', error);
+      alert('Error sending message');
     }
   };
 
   const getOtherUser = (conversation) => {
-    if (!conversation.participants) return null;
-    const otherParticipant = conversation.participants.find(p => p.user_id !== currentUser.id);
-    if (!otherParticipant) return null;
-    
-    // Try to find user from the participant's user object first
-    if (otherParticipant.user) {
-      return otherParticipant.user;
-    }
-    
-    // Otherwise find from users list
-    return users.find(u => u.id === otherParticipant.user_id);
+    return conversation.participants?.find((p) => p.user_id !== user.id)?.user;
   };
 
-  const filteredUsers = users.filter(user => 
-    user.id !== currentUser.id &&
-    (user.name?.toLowerCase().includes(search.toLowerCase()) ||
-     user.email?.toLowerCase().includes(search.toLowerCase()))
-  );
-
-  const handleUserSelect = (user) => {
-    setSelectedUser(user);
-  };
-
-  const handleConversationSelect = (conversation) => {
-    const otherUser = getOtherUser(conversation);
-    if (otherUser) {
-      setSelectedUser(otherUser);
-    }
-  };
+  if (loading) {
+    return <div className="view-loading"><div className="spinner"></div></div>;
+  }
 
   return (
-    <>
-      <div className={`fixed inset-y-0 right-0 z-40 w-80 bg-white border-l border-gray-200 transform transition-transform ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-        <div className="h-full flex flex-col">
-          {/* Header */}
-          <div className="p-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-gray-900">Messages</h3>
-              <button
-                onClick={onClose}
-                className="p-2 hover:bg-gray-100 rounded transition-colors"
-              >
-                ✕
+    <div className="messages-view">
+      <div className="conversations-sidebar">
+        <div className="sidebar-header">
+          <h2>Messages</h2>
+          <button onClick={() => setShowNewChat(true)} className="btn-primary btn-sm">
+            + New
+          </button>
+        </div>
+        <div className="conversations-list">
+          {conversations.length > 0 ? (
+            conversations.map((conv) => {
+              const otherUser = getOtherUser(conv);
+              return (
+                <div
+                  key={conv.id}
+                  className={`conversation-item ${
+                    selectedConversation?.id === conv.id ? 'active' : ''
+                  }`}
+                  onClick={() => setSelectedConversation(conv)}
+                >
+                  <div className="conversation-avatar">
+                    {otherUser?.name?.charAt(0)?.toUpperCase() || 'U'}
+                  </div>
+                  <div className="conversation-info">
+                    <strong>{otherUser?.name || 'Unknown User'}</strong>
+                    <p className="last-message">
+                      {conv.messages?.[conv.messages.length - 1]?.content || 'No messages yet'}
+                    </p>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="empty-conversations">
+              <p>No conversations yet</p>
+              <button onClick={() => setShowNewChat(true)} className="btn-primary btn-sm">
+                Start a chat
               </button>
             </div>
-            
-            <div className="mt-3 relative">
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</div>
+          )}
+        </div>
+      </div>
+
+      <div className="messages-container">
+        {selectedConversation ? (
+          <>
+            <div className="messages-header">
+              <div className="message-user">
+                <div className="user-avatar">
+                  {getOtherUser(selectedConversation)?.name?.charAt(0)?.toUpperCase() || 'U'}
+                </div>
+                <div>
+                  <h3>{getOtherUser(selectedConversation)?.name || 'Unknown User'}</h3>
+                  <p className="user-status">Active</p>
+                </div>
+              </div>
+            </div>
+            <div className="messages-list">
+              {messages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`message ${msg.sender_id === user.id ? 'sent' : 'received'}`}
+                >
+                  <div className="message-content">{msg.content}</div>
+                  <div className="message-time">
+                    {new Date(msg.created_at).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </div>
+                </div>
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
+            <form onSubmit={sendMessage} className="message-input">
               <input
                 type="text"
-                placeholder="Search users..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder="Type a message..."
               />
-            </div>
-          </div>
-
-          {/* List */}
-          <div className="flex-1 overflow-y-auto">
-            {loading ? (
-              <div className="flex items-center justify-center h-32">
-                <LoadingSpinner />
-              </div>
-            ) : conversations.length === 0 && filteredUsers.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
-                <div className="text-4xl mb-3">👥</div>
-                <p>No conversations yet</p>
-                <p className="text-sm mt-1">Start chatting with team members</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {/* Conversations */}
-                {conversations.map(conversation => {
-                  const otherUser = getOtherUser(conversation);
-                  if (!otherUser) return null;
-                  
-                  return (
-                    <button
-                      key={conversation.id}
-                      onClick={() => handleConversationSelect(conversation)}
-                      className="w-full p-3 hover:bg-gray-50 transition-colors flex items-center gap-3 text-left"
-                    >
-                      <UserAvatar user={otherUser} size="md" showChat={false} />
-                      
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-gray-900 truncate">{otherUser.name}</span>
-                        </div>
-                        <p className="text-sm text-gray-500 truncate">
-                          {conversation.last_message?.content || 'No messages yet'}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
-                
-                {/* Users without conversations */}
-                {filteredUsers.map(user => {
-                  const hasConversation = conversations.some(conv => 
-                    conv.participants?.some(p => p.user_id === user.id)
-                  );
-                  
-                  if (hasConversation) return null;
-                  
-                  return (
-                    <button
-                      key={user.id}
-                      onClick={() => handleUserSelect(user)}
-                      className="w-full p-3 hover:bg-gray-50 transition-colors flex items-center gap-3 text-left"
-                    >
-                      <UserAvatar user={user} size="md" showChat={false} />
-                      
-                      <div className="flex-1 min-w-0">
-                        <span className="font-medium text-gray-900 block truncate">{user.name}</span>
-                        <p className="text-sm text-gray-500 truncate">{user.email}</p>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Chat Window */}
-      {selectedUser && (
-        <ChatWindow
-          isOpen={!!selectedUser}
-          onClose={() => setSelectedUser(null)}
-          otherUser={selectedUser}
-          currentUser={currentUser}
-        />
-      )}
-    </>
-  );
-};
-
-// --- Login Page ---
-const LoginPage = ({ onLogin, onShowSignup }) => {
-  const [formData, setFormData] = useState({ email: '', password: '' });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    
-    try {
-      await onLogin(formData);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md p-8 shadow-xl">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full mb-4">
-            <div className="text-2xl">📋</div>
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900">ProjectFlow</h1>
-          <p className="text-gray-600 mt-2">Sign in to continue</p>
-        </div>
-
-        {error && <Alert type="error" onClose={() => setError('')}>{error}</Alert>}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-            <input
-              type="email"
-              required
-              value={formData.email}
-              onChange={(e) => setFormData({...formData, email: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="you@company.com"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-            <input
-              type="password"
-              required
-              value={formData.password}
-              onChange={(e) => setFormData({...formData, password: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="••••••••"
-            />
-          </div>
-
-          <Button type="submit" disabled={loading} className="w-full">
-            {loading ? <LoadingSpinner size="sm" /> : 'Sign In'}
-          </Button>
-
-          <div className="text-center">
-            <button
-              type="button"
-              onClick={onShowSignup}
-              className="text-blue-600 hover:text-blue-700 text-sm"
-            >
-              Don't have an account? Sign up
-            </button>
-          </div>
-        </form>
-      </Card>
-    </div>
-  );
-};
-
-// --- Signup Page ---
-const SignupPage = ({ onBack, onSuccess }) => {
-  const [formData, setFormData] = useState({ 
-    name: '', 
-    email: '', 
-    password: '',
-    company_name: ''
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-
-    try {
-      const data = await api.signup(formData);
-      localStorage.setItem('access_token', data.access_token);
-      localStorage.setItem('refresh_token', data.refresh_token);
-      onSuccess();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md p-8 shadow-xl">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full mb-4">
-            <div className="text-2xl">👤</div>
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900">Create Account</h1>
-          <p className="text-gray-600 mt-2">Join ProjectFlow today</p>
-        </div>
-
-        {error && <Alert type="error" onClose={() => setError('')}>{error}</Alert>}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Company Name</label>
-            <input
-              type="text"
-              required
-              value={formData.company_name}
-              onChange={(e) => setFormData({...formData, company_name: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-              placeholder="Acme Corp"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-            <input
-              type="text"
-              required
-              value={formData.name}
-              onChange={(e) => setFormData({...formData, name: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-              placeholder="John Doe"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-            <input
-              type="email"
-              required
-              value={formData.email}
-              onChange={(e) => setFormData({...formData, email: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-              placeholder="you@company.com"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-            <input
-              type="password"
-              required
-              value={formData.password}
-              onChange={(e) => setFormData({...formData, password: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-              placeholder="••••••••"
-            />
-          </div>
-
-          <div className="flex gap-3">
-            <Button type="button" onClick={onBack} variant="outline" className="flex-1" disabled={loading}>
-              Back
-            </Button>
-            <Button type="submit" disabled={loading} className="flex-1">
-              {loading ? <LoadingSpinner size="sm" /> : 'Create Account'}
-            </Button>
-          </div>
-        </form>
-      </Card>
-    </div>
-  );
-};
-
-// --- Main Dashboard ---
-const Dashboard = ({ onLogout, currentUser, setCurrentUser }) => {
-  const [projects, setProjects] = useState([]);
-  const [selectedProject, setSelectedProject] = useState(null);
-  const [showCreateProject, setShowCreateProject] = useState(false);
-  const [showChatSidebar, setShowChatSidebar] = useState(false);
-  const [allUsers, setAllUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [alert, setAlert] = useState(null);
-  const [unreadMessages, setUnreadMessages] = useState(0);
-
-  useEffect(() => {
-    initializeApp();
-    
-    const unsubscribe = webSocketService.addMessageListener((data) => {
-      if (data.type === 'message') {
-        loadUnreadCount();
-      }
-    });
-
-    return unsubscribe;
-  }, []);
-
-  const initializeApp = async () => {
-    try {
-      await loadCurrentUser();
-      await loadProjects();
-      await loadAllUsers();
-      await loadUnreadCount();
-    } catch (err) {
-      console.error('Initialize error:', err);
-      setAlert({ type: 'error', message: 'Failed to load data' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadCurrentUser = async () => {
-    try {
-      const user = await api.getCurrentUser();
-      setCurrentUser(user);
-      
-      // Connect WebSocket
-      if (user.id) {
-        webSocketService.connect(user.id);
-      }
-    } catch (err) {
-      console.error('Failed to load user:', err);
-      localStorage.clear();
-      window.location.href = '/';
-    }
-  };
-
-  const loadProjects = async () => {
-    try {
-      const data = await api.get('/projects');
-      setProjects(data || []);
-    } catch (err) {
-      console.error('Load projects error:', err);
-    }
-  };
-
-  const loadAllUsers = async () => {
-    try {
-      const users = await api.get('/user');
-      setAllUsers(users || []);
-    } catch (err) {
-      console.error('Failed to load users:', err);
-    }
-  };
-
-  const loadUnreadCount = async () => {
-    try {
-      const count = await api.getUnreadCount();
-      setUnreadMessages(count);
-    } catch (error) {
-      console.error('Failed to load unread count:', error);
-    }
-  };
-
-  const handleCreateProject = async (projectData) => {
-    try {
-      const newProject = await api.post('/projects/', projectData);
-      setProjects(prev => [...prev, newProject]);
-      setShowCreateProject(false);
-      setAlert({ type: 'success', message: 'Project created!' });
-    } catch (err) {
-      setAlert({ type: 'error', message: err.message });
-    }
-  };
-
-  if (loading) return <LoadingOverlay />;
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white">📋</div>
-              <h1 className="text-xl font-bold">ProjectFlow</h1>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => setShowChatSidebar(true)}
-                className="relative p-2 hover:bg-gray-100 rounded"
-              >
-                💬
-                {unreadMessages > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
-                    {unreadMessages > 9 ? '9+' : unreadMessages}
-                  </span>
-                )}
+              <button type="submit" className="btn-primary">
+                Send
               </button>
-              
-              <UserAvatar user={currentUser} size="md" showChat={false} />
-              
-              <button onClick={onLogout} className="p-2 hover:bg-gray-100 rounded">
-                🚪
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 py-6">
-        {alert && <Alert type={alert.type} onClose={() => setAlert(null)}>{alert.message}</Alert>}
-
-        {selectedProject ? (
-          <ProjectDashboard
-            project={selectedProject}
-            onBack={() => {
-              setSelectedProject(null);
-              loadProjects();
-            }}
-            currentUser={currentUser}
-            setAlert={setAlert}
-            allUsers={allUsers}
-          />
-        ) : (
-          <>
-            <Card className="p-6 mb-6 bg-gradient-to-r from-blue-50 to-indigo-50">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h2 className="text-2xl font-bold">Welcome, {currentUser?.name}!</h2>
-                  <p className="text-gray-600">Manage your projects</p>
-                </div>
-                <Button onClick={() => setShowCreateProject(true)}>
-                  + New Project
-                </Button>
-              </div>
-            </Card>
-
-            <Card className="p-6">
-              <h3 className="text-lg font-bold mb-4">Your Projects</h3>
-              
-              {projects.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <p>No projects yet</p>
-                  <Button onClick={() => setShowCreateProject(true)} className="mt-3">
-                    Create First Project
-                  </Button>
-                </div>
-              ) : (
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {projects.map(project => (
-                    <Card 
-                      key={project.id}
-                      className="p-4 hover:shadow-lg cursor-pointer"
-                      onClick={() => setSelectedProject(project)}
-                    >
-                      <h4 className="font-bold text-lg mb-2">{project.name}</h4>
-                      <p className="text-sm text-gray-600 mb-3">{project.description}</p>
-                      <div className="flex justify-between text-sm">
-                        <span>{project.progress || 0}% complete</span>
-                        <span className="text-blue-600">View →</span>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </Card>
+            </form>
           </>
-        )}
-      </main>
-
-      {/* Chat Sidebar */}
-      <ChatSidebar
-        isOpen={showChatSidebar}
-        onClose={() => setShowChatSidebar(false)}
-        currentUser={currentUser}
-        users={allUsers}
-      />
-
-      {/* Create Project Modal */}
-      {showCreateProject && (
-        <CreateProjectModal
-          onClose={() => setShowCreateProject(false)}
-          onSubmit={handleCreateProject}
-        />
-      )}
-    </div>
-  );
-};
-
-// --- Create Project Modal ---
-const CreateProjectModal = ({ onClose, onSubmit }) => {
-  const [formData, setFormData] = useState({ name: '', description: '' });
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    await onSubmit(formData);
-    setLoading(false);
-  };
-
-  return (
-    <Modal isOpen={true} onClose={onClose} title="Create Project">
-      <form onSubmit={handleSubmit} className="p-6 space-y-4">
-        <div>
-          <label className="block text-sm font-medium mb-2">Project Name</label>
-          <input
-            type="text"
-            required
-            value={formData.name}
-            onChange={(e) => setFormData({...formData, name: e.target.value})}
-            className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-2">Description</label>
-          <textarea
-            required
-            value={formData.description}
-            onChange={(e) => setFormData({...formData, description: e.target.value})}
-            className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500"
-            rows="3"
-          />
-        </div>
-
-        <div className="flex gap-3">
-          <Button type="button" onClick={onClose} variant="outline" className="flex-1">
-            Cancel
-          </Button>
-          <Button type="submit" disabled={loading} className="flex-1">
-            {loading ? <LoadingSpinner size="sm" /> : 'Create'}
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  );
-};
-
-// --- Project Dashboard (Simplified) ---
-const ProjectDashboard = ({ project, onBack, currentUser, setAlert, allUsers }) => {
-  const [tasks, setTasks] = useState([]);
-  const [members, setMembers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showCreateTask, setShowCreateTask] = useState(false);
-
-  useEffect(() => {
-    loadProjectData();
-  }, [project]);
-
-  const loadProjectData = async () => {
-    try {
-      const [tasksData, membersData] = await Promise.all([
-        api.get(`/projects/${project.id}/task`),
-        api.get(`/projects/${project.id}/members`)
-      ]);
-      
-      setTasks(tasksData || []);
-      setMembers(membersData || []);
-    } catch (err) {
-      console.error('Failed to load project data:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCreateTask = async (taskData) => {
-    try {
-      const newTask = await api.post(`/projects/${project.id}/task`, taskData);
-      setTasks(prev => [newTask, ...prev]);
-      setShowCreateTask(false);
-      setAlert({ type: 'success', message: 'Task created!' });
-    } catch (err) {
-      setAlert({ type: 'error', message: err.message });
-    }
-  };
-
-  if (loading) return <LoadingOverlay />;
-
-  const columns = [
-    { id: 'todo', title: 'To Do', status: 'todo' },
-    { id: 'in-progress', title: 'In Progress', status: 'in-progress' },
-    { id: 'done', title: 'Done', status: 'done' }
-  ];
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded">←</button>
-          <div>
-            <h2 className="text-xl font-bold">{project.name}</h2>
-            <p className="text-sm text-gray-500">{project.description}</p>
+        ) : (
+          <div className="empty-messages">
+            <div className="empty-icon">💬</div>
+            <h3>Select a conversation</h3>
+            <p>Choose from existing conversations or start a new one</p>
           </div>
-        </div>
-        
-        <Button onClick={() => setShowCreateTask(true)}>+ Create Task</Button>
+        )}
       </div>
 
-      <Card className="p-4">
-        <h3 className="font-bold mb-4">Board</h3>
-        
-        <div className="flex gap-4 overflow-x-auto">
-          {columns.map(column => (
-            <div key={column.id} className="flex-1 min-w-[250px] bg-gray-50 rounded p-3">
-              <div className="flex items-center gap-2 mb-3">
-                <h4 className="font-semibold">{column.title}</h4>
-                <span className="bg-white px-2 py-0.5 rounded text-xs">
-                  {tasks.filter(t => t.status === column.status).length}
-                </span>
+      {showNewChat && (
+        <Modal onClose={() => setShowNewChat(false)}>
+          <h2>Start New Conversation</h2>
+          <div className="users-select">
+            {users.map((u) => (
+              <div
+                key={u.id}
+                className="user-select-item"
+                onClick={() => startConversation(u.id)}
+              >
+                <div className="user-avatar">{u.name.charAt(0).toUpperCase()}</div>
+                <div className="user-details">
+                  <strong>{u.name}</strong>
+                  <p>{u.email}</p>
+                </div>
               </div>
-              
-              <div className="space-y-2">
-                {tasks
-                  .filter(task => task.status === column.status)
-                  .map(task => (
-                    <Card key={task.id} className="p-3">
-                      <div className="font-medium text-sm mb-1">{task.title}</div>
-                      <div className="text-xs text-gray-500">{task.description}</div>
-                      <div className="mt-2">
-                        <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">
-                          {task.priority || 'medium'}
-                        </span>
-                      </div>
-                    </Card>
-                  ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* Members */}
-      <Card className="p-6">
-        <h3 className="font-bold mb-4">Team Members</h3>
-        <div className="grid md:grid-cols-3 gap-4">
-          {members.map(member => (
-            <div key={member.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded">
-              <UserAvatar 
-                user={allUsers.find(u => u.id === member.user_id) || { name: member.user_name, id: member.user_id }}
-                size="md"
-              />
-              <div>
-                <div className="font-medium">{member.user_name}</div>
-                <div className="text-sm text-gray-500">{member.role}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* Create Task Modal */}
-      {showCreateTask && (
-        <Modal isOpen={true} onClose={() => setShowCreateTask(false)} title="Create Task">
-          <CreateTaskForm
-            onSubmit={handleCreateTask}
-            onCancel={() => setShowCreateTask(false)}
-          />
+            ))}
+          </div>
         </Modal>
       )}
     </div>
   );
-};
+}
 
-// --- Create Task Form ---
-const CreateTaskForm = ({ onSubmit, onCancel }) => {
+// ======================== MODAL COMPONENTS ========================
+
+function Modal({ children, onClose }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose}>
+          ×
+        </button>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function CreateProjectModal({ onClose, onCreate }) {
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onCreate(formData);
+  };
+
+  return (
+    <Modal onClose={onClose}>
+      <h2>Create New Project</h2>
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label>Project Name</label>
+          <input
+            type="text"
+            placeholder="Website Redesign"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            required
+            minLength={3}
+          />
+        </div>
+        <div className="form-group">
+          <label>Description</label>
+          <textarea
+            placeholder="Describe your project..."
+            value={formData.description}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            required
+            rows="3"
+          />
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn-text" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary">
+            Create Project
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function EditProjectModal({ onClose, onSave, initialData }) {
+  const [formData, setFormData] = useState(initialData);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave(formData);
+  };
+
+  useEffect(() => {
+    setFormData(initialData);
+  }, [initialData]);
+
+  return (
+    <Modal onClose={onClose}>
+      <h2>Edit Project</h2>
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label>Project Name</label>
+          <input
+            type="text"
+            placeholder="Project name"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            required
+            minLength={3}
+          />
+        </div>
+        <div className="form-group">
+          <label>Description</label>
+          <textarea
+            placeholder="Describe your project..."
+            value={formData.description}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            required
+            rows="3"
+          />
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn-text" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary">
+            Save Changes
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function CreateTaskModal({ onClose, onCreate }) {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     status: 'todo',
-    priority: 'medium'
+    priority: 'medium',
   });
-  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setLoading(true);
-    await onSubmit(formData);
-    setLoading(false);
+    onCreate(formData);
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-6 space-y-4">
-      <div>
-        <label className="block text-sm font-medium mb-2">Title</label>
-        <input
-          type="text"
-          required
-          value={formData.title}
-          onChange={(e) => setFormData({...formData, title: e.target.value})}
-          className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500"
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium mb-2">Description</label>
-        <textarea
-          value={formData.description}
-          onChange={(e) => setFormData({...formData, description: e.target.value})}
-          className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500"
-          rows="3"
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium mb-2">Status</label>
-          <select
-            value={formData.status}
-            onChange={(e) => setFormData({...formData, status: e.target.value})}
-            className="w-full px-3 py-2 border rounded"
-          >
-            <option value="todo">To Do</option>
-            <option value="in-progress">In Progress</option>
-            <option value="done">Done</option>
-          </select>
+    <Modal onClose={onClose}>
+      <h2>Create New Task</h2>
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label>Task Title</label>
+          <input
+            type="text"
+            placeholder="Design homepage"
+            value={formData.title}
+            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+            required
+            minLength={3}
+          />
         </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-2">Priority</label>
+        <div className="form-group">
+          <label>Description</label>
+          <textarea
+            placeholder="Task details..."
+            value={formData.description}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            rows="3"
+          />
+        </div>
+        <div className="form-group">
+          <label>Priority</label>
           <select
             value={formData.priority}
-            onChange={(e) => setFormData({...formData, priority: e.target.value})}
-            className="w-full px-3 py-2 border rounded"
+            onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
           >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
+            <option value="low">Low Priority</option>
+            <option value="medium">Medium Priority</option>
+            <option value="high">High Priority</option>
           </select>
         </div>
-      </div>
-
-      <div className="flex gap-3">
-        <Button type="button" onClick={onCancel} variant="outline" className="flex-1">
-          Cancel
-        </Button>
-        <Button type="submit" disabled={loading} className="flex-1">
-          {loading ? <LoadingSpinner size="sm" /> : 'Create'}
-        </Button>
-      </div>
-    </form>
+        <div className="modal-actions">
+          <button type="button" className="btn-text" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary">
+            Create Task
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
-};
+}
 
-// --- Main App Component ---
-function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [screen, setScreen] = useState('login');
-  const [isLoading, setIsLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [alert, setAlert] = useState(null);
+function AddMemberModal({ projectId, onClose, onAdd }) {
+  const [users, setUsers] = useState([]);
+  const [selectedUser, setSelectedUser] = useState('');
+  const [role, setRole] = useState('viewer');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    checkAuth();
+    loadUsers();
   }, []);
 
-  const checkAuth = () => {
-    const hasToken = !!localStorage.getItem('access_token');
-    setIsLoggedIn(hasToken);
-    setIsLoading(false);
-  };
-
-  const handleLogin = async (formData) => {
+  const loadUsers = async () => {
+    setLoading(true);
     try {
-      const data = await api.login(formData);
-      localStorage.setItem('access_token', data.access_token);
-      localStorage.setItem('refresh_token', data.refresh_token);
-      
-      const user = await api.getCurrentUser();
-      setCurrentUser(user);
-      setIsLoggedIn(true);
-      
-      setAlert({ type: 'success', message: 'Login successful!' });
+      const data = await api.get('/user/');
+      setUsers(data);
     } catch (error) {
-      throw error;
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      const refreshToken = localStorage.getItem('refresh_token');
-      if (refreshToken) {
-        await api.post('/auth/logout', { refresh_token: refreshToken });
-      }
-    } catch (err) {
-      console.error('Logout error:', err);
+      console.error('Error loading users:', error);
     } finally {
-      webSocketService.disconnect();
-      localStorage.clear();
-      setCurrentUser(null);
-      setIsLoggedIn(false);
+      setLoading(false);
     }
   };
 
-  if (isLoading) return <LoadingOverlay />;
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onAdd({ user_id: parseInt(selectedUser), role });
+  };
 
-  if (isLoggedIn) {
-    return (
-      <Dashboard 
-        onLogout={handleLogout}
-        currentUser={currentUser}
-        setCurrentUser={setCurrentUser}
-      />
-    );
-  }
+  return (
+    <Modal onClose={onClose}>
+      <h2>Add Team Member</h2>
+      {loading ? (
+        <div className="modal-loading"><div className="spinner"></div></div>
+      ) : (
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label>Select User</label>
+            <select value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} required>
+              <option value="">Choose a user...</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name} ({user.email})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Role</label>
+            <select value={role} onChange={(e) => setRole(e.target.value)}>
+              <option value="viewer">Viewer</option>
+              <option value="editor">Editor</option>
+              <option value="owner">Owner</option>
+            </select>
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="btn-text" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="btn-primary">
+              Add Member
+            </button>
+          </div>
+        </form>
+      )}
+    </Modal>
+  );
+}
 
-  switch (screen) {
-    case 'signup':
-      return (
-        <SignupPage
-          onBack={() => setScreen('login')}
-          onSuccess={() => setIsLoggedIn(true)}
-        />
-      );
-    default:
-      return (
-        <LoginPage
-          onLogin={handleLogin}
-          onShowSignup={() => setScreen('signup')}
-        />
-      );
-  }
+function SendInviteModal({ onClose, onSend, loading }) {
+  const [formData, setFormData] = useState({
+    email: '',
+    role: 'member',
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSend(formData);
+  };
+
+  return (
+    <Modal onClose={onClose}>
+      <h2>Send Invitation</h2>
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label>Email Address</label>
+          <input
+            type="email"
+            placeholder="colleague@example.com"
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            required
+          />
+        </div>
+        <div className="form-group">
+          <label>Role</label>
+          <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })}>
+            <option value="member">Member</option>
+            <option value="admin">Admin</option>
+            <option value="editor">Editor</option>
+            <option value="viewer">Viewer</option>
+          </select>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn-text" onClick={onClose} disabled={loading}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary" disabled={loading}>
+            {loading ? 'Sending...' : 'Send Invitation'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
 }
 
 export default App;
