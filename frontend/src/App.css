@@ -331,6 +331,10 @@ body {
   font-size: 1.25rem;
 }
 
+.nav-unread-badge {
+  margin-left: auto;
+}
+
 .sidebar-footer {
   padding: var(--spacing-lg);
   border-top: 1px solid var(--gray-200);
