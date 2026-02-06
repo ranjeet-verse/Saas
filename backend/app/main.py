@@ -1,10 +1,10 @@
-from .core import logging
+from .core import logging, config
 from fastapi import FastAPI
 from .database import engine
 from .models import models
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import user, auth, me, projects, invite, messaging
+from .routers import user, auth, me, projects, invite, messaging, files
 
 
 models.Base.metadata.create_all(bind=engine)
@@ -12,6 +12,7 @@ models.Base.metadata.create_all(bind=engine)
 app = FastAPI()
 app.add_middleware(logging.LoggingMiddleware)
 app.add_middleware(logging.RateLimitMiddleware)
+app.add_middleware(config.LimitUploadSizeMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,3 +35,4 @@ app.include_router(me.router)
 app.include_router(projects.router)
 app.include_router(invite.router)
 app.include_router(messaging.router)
+app.include_router(files.router)
