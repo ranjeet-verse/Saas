@@ -110,6 +110,7 @@ class Me(SecureBaseModel):
     email: EmailStr
     role: str
     tenant_id: int
+    company_name: Optional[str] = None
 
 
 class ProjectCreate(SecureBaseModel):

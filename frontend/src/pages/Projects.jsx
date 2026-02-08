@@ -4,6 +4,7 @@ import Card from '../components/common/Card';
 import Button from '../components/common/Button';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import CreateProjectModal from '../components/projects/CreateProjectModal';
+import CreateTaskModal from '../components/projects/CreateTaskModal';
 import { useNavigate } from 'react-router-dom';
 import SearchBar from '../components/common/SearchBar';
 import { useDebounce, useLocalStorage, exportToCSV } from '../utils/helpers';
@@ -16,6 +17,7 @@ const Projects = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [sortBy, setSortBy] = useState('name');
     const [viewMode, setViewMode] = useLocalStorage('projects_view_mode', 'grid');
+    const [taskModal, setTaskModal] = useState({ isOpen: false, projectId: null });
 
     const debouncedSearch = useDebounce(searchTerm, 300);
     const navigate = useNavigate();
@@ -39,6 +41,17 @@ const Projects = () => {
     const handleProjectCreated = (newProject) => {
         setProjects([newProject, ...projects]);
         addNotification('Project created successfully!', 'success');
+    };
+
+    const handleTaskCreated = async (taskData) => {
+        try {
+            await api.post(`/projects/${taskModal.projectId}/task`, taskData);
+            addNotification('Task added to project!', 'success');
+            // We don't necessarily need to update the project list here unless we show task counts
+        } catch (err) {
+            addNotification('Failed to create task', 'error');
+            throw err;
+        }
     };
 
     const filteredProjects = useMemo(() => {
@@ -122,8 +135,20 @@ const Projects = () => {
                             className="group animate-scale-in"
                         >
                             <div className="flex justify-between items-start">
-                                <h4 className="font-bold text-lg text-gray-900 group-hover:text-indigo-600 transition-colors uppercase tracking-tight">{project.name}</h4>
-                                <div className={`w-3 h-3 rounded-full ${project.progress === 100 ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]' : 'bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.4)]'}`}></div>
+                                <h4 className="font-bold text-lg text-gray-900 group-hover:text-indigo-600 transition-colors uppercase tracking-tight truncate flex-1 pr-4">{project.name}</h4>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setTaskModal({ isOpen: true, projectId: project.id });
+                                        }}
+                                        className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
+                                        title="Add Task"
+                                    >
+                                        +
+                                    </button>
+                                    <div className={`w-3 h-3 rounded-full ${project.progress === 100 ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]' : 'bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.4)]'}`}></div>
+                                </div>
                             </div>
                             <p className="text-gray-500 mt-3 line-clamp-2 h-10 text-sm leading-relaxed">{project.description}</p>
 
@@ -174,10 +199,21 @@ const Projects = () => {
                                             <span className="text-sm text-gray-600 font-medium">{project.progress}%</span>
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${project.progress === 100 ? 'bg-green-100 text-green-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                                            {project.progress === 100 ? 'Completed' : 'Active'}
-                                        </span>
+                                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                                        <div className="flex justify-end gap-2">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setTaskModal({ isOpen: true, projectId: project.id });
+                                                }}
+                                                className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-[10px] font-bold uppercase hover:bg-indigo-600 hover:text-white transition-all"
+                                            >
+                                                + Add Task
+                                            </button>
+                                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${project.progress === 100 ? 'bg-green-100 text-green-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                                                {project.progress === 100 ? 'Completed' : 'Active'}
+                                            </span>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -199,6 +235,12 @@ const Projects = () => {
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 onProjectCreated={handleProjectCreated}
+            />
+
+            <CreateTaskModal
+                isOpen={taskModal.isOpen}
+                onClose={() => setTaskModal({ isOpen: false, projectId: null })}
+                onTaskCreated={handleTaskCreated}
             />
         </div>
     );

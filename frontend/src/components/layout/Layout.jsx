@@ -17,6 +17,7 @@ const Layout = () => {
         { label: 'Projects', path: '/projects' },
         { label: 'Files', path: '/files' },
         { label: 'Chat', path: '/chat' },
+        { label: 'Organization', path: '/organization' },
         { label: 'Invite', path: '/invite' },
     ];
 
@@ -74,8 +75,9 @@ const Layout = () => {
                         {navItems.find(i => i.path === location.pathname)?.label || 'Overview'}
                     </h2>
                     <div className="flex items-center space-x-4">
-                        {/* Add notification bells or search here later */}
-                        <span className="text-sm text-gray-500">Tenant: {user.tenant_id}</span>
+                        <span className="text-xs font-bold text-gray-400 uppercase tracking-widest bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100 shadow-sm">
+                            Organization: <span className="text-indigo-600">{user.company_name}</span>
+                        </span>
                     </div>
                 </header>
 

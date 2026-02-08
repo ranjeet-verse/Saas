@@ -5,6 +5,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 import Button from '../components/common/Button';
 import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../context/NotificationContext';
+import CreateTaskModal from '../components/projects/CreateTaskModal';
 import { getInitials, getAvatarColor, formatDate } from '../utils/helpers';
 
 const Dashboard = () => {
@@ -13,22 +14,30 @@ const Dashboard = () => {
     const [statsData, setStatsData] = useState(null);
     const [unreadCount, setUnreadCount] = useState(0);
     const [activities, setActivities] = useState([]);
+    const [taskModal, setTaskModal] = useState({ isOpen: false, projectId: null });
     const navigate = useNavigate();
     const { addNotification } = useNotification();
 
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const [projectsRes, statsRes, unreadRes, activityRes] = await Promise.all([
+                const results = await Promise.allSettled([
                     api.get('/projects'),
                     api.get('/projects/stats'),
                     api.get('/messages/unread_count'),
                     api.get('/activity/recent')
                 ]);
-                setProjects(projectsRes.data);
-                setStatsData(statsRes.data);
-                setUnreadCount(unreadRes.data.unread_count);
-                setActivities(activityRes.data);
+
+                if (results[0].status === 'fulfilled') setProjects(results[0].value.data);
+                if (results[1].status === 'fulfilled') setStatsData(results[1].value.data);
+                if (results[2].status === 'fulfilled') setUnreadCount(results[2].value.data.unread_count);
+                if (results[3].status === 'fulfilled') setActivities(results[3].value.data);
+
+                // If any failed, notify silently or log
+                const failed = results.filter(r => r.status === 'rejected');
+                if (failed.length > 0) {
+                    console.warn(`${failed.length} dashboard data sources failed to load`);
+                }
             } catch (err) {
                 addNotification('Failed to load dashboard data', 'error');
             } finally {
@@ -37,6 +46,18 @@ const Dashboard = () => {
         };
         fetchData();
     }, [addNotification]);
+
+    const handleTaskCreated = async (taskData) => {
+        try {
+            await api.post(`/projects/${taskModal.projectId}/task`, taskData);
+            addNotification('Task added successfully!', 'success');
+            // Optimistically update progress if we were showing it specifically, 
+            // but Dashboard shows a snapshot.
+        } catch (err) {
+            addNotification('Failed to create task', 'error');
+            throw err;
+        }
+    };
 
     if (loading) return <LoadingSpinner className="mt-20" />;
 
@@ -99,9 +120,21 @@ const Dashboard = () => {
                                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-black bg-gradient-to-br from-indigo-500 to-purple-600`}>
                                         {project.name[0].toUpperCase()}
                                     </div>
-                                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${project.progress === 100 ? 'bg-green-100 text-green-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                                        {project.progress === 100 ? 'Completed' : 'Active'}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setTaskModal({ isOpen: true, projectId: project.id });
+                                            }}
+                                            className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all shadow-sm group-hover:scale-110"
+                                            title="Quick Add Task"
+                                        >
+                                            +
+                                        </button>
+                                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${project.progress === 100 ? 'bg-green-100 text-green-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                                            {project.progress === 100 ? 'Completed' : 'Active'}
+                                        </span>
+                                    </div>
                                 </div>
                                 <h4 className="font-bold text-gray-900 group-hover:text-indigo-600 transition-colors uppercase tracking-tight">{project.name}</h4>
                                 <p className="text-xs text-gray-500 mt-2 line-clamp-2 h-8">{project.description}</p>
@@ -162,6 +195,12 @@ const Dashboard = () => {
                     </Card>
                 </div>
             </div>
+
+            <CreateTaskModal
+                isOpen={taskModal.isOpen}
+                onClose={() => setTaskModal({ isOpen: false, projectId: null })}
+                onTaskCreated={handleTaskCreated}
+            />
         </div>
     );
 };

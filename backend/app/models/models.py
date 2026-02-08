@@ -35,6 +35,10 @@ class User(Base):
     conversation_participants = relationship("ConversationParticipant", back_populates="user",cascade="all, delete-orphan")
     sent_messages = relationship("Message", back_populates="sender",foreign_keys="Message.sender_id",cascade="all, delete-orphan")
 
+    @property
+    def company_name(self):
+        return self.tenant.company_name if self.tenant else "Unknown"
+
 class ProjectMembers(Base):
     __tablename__ = "project_members"
     __table_args__ = (

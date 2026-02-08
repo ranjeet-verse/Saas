@@ -12,6 +12,7 @@ import LoadingSpinner from './components/common/LoadingSpinner';
 import Invite from './pages/Invite';
 import Files from './pages/Files';
 import Analytics from './pages/Analytics';
+import Organization from './pages/Organization';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -45,6 +46,7 @@ function App() {
         <Route path="files" element={<Files />} />
         <Route path="chat" element={<Chat />} />
         <Route path="invite" element={<Invite />} />
+        <Route path="organization" element={<Organization />} />
       </Route>
     </Routes>
   );

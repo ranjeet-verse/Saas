@@ -17,10 +17,16 @@ router = APIRouter(
 
 ALLOWED_MIME_TYPES = {
     "image/jpeg",
+    "image/jpg",
     "image/png",
+    "image/gif",
     "application/pdf",
     "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/plain",
+    "text/csv"
 }
 
 BLOCKED_EXT = {
@@ -29,10 +35,10 @@ BLOCKED_EXT = {
 }
 
 ALLOWED_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".pdf", ".doc", ".docx"
+    ".jpg", ".jpeg", ".png", ".gif", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt", ".csv"
 }
 
-MAX_FILE_SIZE = 10 * 1024 * 1024 
+MAX_FILE_SIZE = 50 * 1024 * 1024 
 
 @router.post("/upload")
 async def upload_file(
@@ -42,7 +48,7 @@ async def upload_file(
 ):
 
     if file.content_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(400, "File type not allowed")
+        raise HTTPException(400, f"File type {file.content_type} not allowed")
 
     if not file.filename:
         raise HTTPException(400, "Invalid filename")
@@ -50,17 +56,17 @@ async def upload_file(
     ext = os.path.splitext(file.filename)[1].lower()
 
     if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(400, "Invalid extension")
+        raise HTTPException(400, f"Extension {ext} not allowed")
 
     if ext in BLOCKED_EXT:
-        raise HTTPException(400, "Executable not allowed")
+        raise HTTPException(400, "Executable or script files are blocked for security")
 
     file.file.seek(0, 2)
     size = file.file.tell()
     file.file.seek(0)
 
     if size > MAX_FILE_SIZE:
-        raise HTTPException(400, "File too large")
+        raise HTTPException(400, f"File too large. Max allowed is 50MB. Current size: {size / (1024*1024):.1f}MB")
 
     key = f"tenant_{current_user.tenant_id}/user_{current_user.id}/{uuid.uuid4()}-{file.filename}"
 

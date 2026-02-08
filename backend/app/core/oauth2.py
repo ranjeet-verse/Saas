@@ -53,7 +53,8 @@ def get_current_user(request: Request,
 
     token_data = verify_access_token(token, credentials_exception)
 
-    user = db.query(models.User).filter(models.User.id == token_data.user_id, models.User.tenant_id == token_data.tenant_id).first()
+    from sqlalchemy.orm import joinedload
+    user = db.query(models.User).options(joinedload(models.User.tenant)).filter(models.User.id == token_data.user_id, models.User.tenant_id == token_data.tenant_id).first()
 
     request.state.user = user
 

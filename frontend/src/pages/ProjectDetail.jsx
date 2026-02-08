@@ -201,10 +201,16 @@ const ProjectDetail = () => {
                     <p className="text-gray-500 mt-2">{project.description}</p>
                 </div>
 
-                <div className="flex gap-4 text-sm">
-                    <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <p className="text-gray-400 uppercase text-[10px] font-bold tracking-wider mb-1">Completion</p>
-                        <p className="text-2xl font-bold text-indigo-600">
+                <div className="flex items-center gap-4 text-sm">
+                    <Button
+                        onClick={() => setTaskModal({ isOpen: true, status: 'todo' })}
+                        className="shadow-md shadow-indigo-100"
+                    >
+                        + Create Task
+                    </Button>
+                    <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm min-w-[120px]">
+                        <p className="text-gray-400 uppercase text-[10px] font-extrabold tracking-widest mb-1">Completion</p>
+                        <p className="text-2xl font-black text-indigo-600">
                             {tasks.length ? Math.round((tasks.filter(t => t.status === 'done').length / tasks.length) * 100) : 0}%
                         </p>
                     </div>

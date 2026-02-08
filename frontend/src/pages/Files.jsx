@@ -10,7 +10,9 @@ const FileIcon = ({ name }) => {
     const ext = name.split('.').pop().toLowerCase();
     if (['pdf'].includes(ext)) return <span className="text-red-500 text-2xl">📄</span>;
     if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) return <span className="text-blue-500 text-2xl">🖼️</span>;
-    if (['doc', 'docx', 'txt'].includes(ext)) return <span className="text-indigo-500 text-2xl">📝</span>;
+    if (['doc', 'docx'].includes(ext)) return <span className="text-indigo-500 text-2xl">📝</span>;
+    if (['xls', 'xlsx', 'csv'].includes(ext)) return <span className="text-green-500 text-2xl">📊</span>;
+    if (['txt'].includes(ext)) return <span className="text-gray-600 text-2xl">📄</span>;
     return <span className="text-gray-500 text-2xl">📁</span>;
 };
 
@@ -66,7 +68,8 @@ const Files = () => {
             addNotification(`${newFiles.length} file(s) uploaded successfully`, 'success');
             fetchFiles();
         } catch (err) {
-            addNotification('Failed to upload file', 'error');
+            const errorMsg = err.response?.data?.detail || 'Failed to upload file';
+            addNotification(errorMsg, 'error');
         } finally {
             setUploading(false);
             setUploadProgress(0);
