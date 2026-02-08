@@ -48,18 +48,20 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
             data = await websocket.receive_text()
             message_data = json.loads(data)
             
+            if message_data.get("type") == "ping":
+                await websocket.send_json({"type": "pong"})
+                continue
+            
             if message_data.get("type") == "typing":
-                # Notify other participants about typing
                 conversation_id = message_data.get("conversation_id")
                 print(f"⌨️ User {user_id} typing in conversation {conversation_id}")
-                
-                # You could broadcast to specific conversation participants
+              
                 await manager.send_personal_message({
                     "type": "typing",
                     "user_id": user_id,
                     "conversation_id": conversation_id
-                }, user_id)  # This is just an example
-                
+                }, user_id)  
+
     except WebSocketDisconnect:
         manager.disconnect(user_id)
     except Exception as e:
@@ -72,7 +74,7 @@ async def create_conversation(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user),
 ):
-    # Check if conversation already exists between these users
+    
     existing = (
         db.query(models.Conversation)
         .join(models.ConversationParticipant)
@@ -88,12 +90,10 @@ async def create_conversation(
     if existing:
         return existing
 
-    # Create new conversation
     conversation = models.Conversation(is_group=False)
     db.add(conversation)
     db.flush()
 
-    # Add participants
     participants = [
         models.ConversationParticipant(
             conversation_id=conversation.id, 
@@ -134,7 +134,7 @@ async def get_messages(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user),
 ):
-    # Verify user is participant
+  
     participant = db.query(models.ConversationParticipant).filter(
         and_(
             models.ConversationParticipant.conversation_id == conversation_id,
@@ -145,7 +145,6 @@ async def get_messages(
     if not participant:
         raise HTTPException(status_code=403, detail="Not a participant in this conversation")
     
-    # Get messages
     messages = (
         db.query(models.Message)
         .filter(models.Message.conversation_id == conversation_id)
@@ -155,7 +154,7 @@ async def get_messages(
         .all()
     )
 
-    # Mark messages as read
+
     db.query(models.Message).filter(
         and_(
             models.Message.conversation_id == conversation_id,
@@ -174,7 +173,6 @@ async def send_message(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user),
 ):
-    # Verify user is participant
     participant = db.query(models.ConversationParticipant).filter(
         and_(
             models.ConversationParticipant.conversation_id == conversation_id,
@@ -185,7 +183,7 @@ async def send_message(
     if not participant:
         raise HTTPException(status_code=403, detail="Not a participant in this conversation")
 
-    # Create message
+   
     message = models.Message(
         conversation_id=conversation_id,
         sender_id=current_user.id,
@@ -193,7 +191,6 @@ async def send_message(
     )
     db.add(message)
 
-    # Update conversation timestamp
     db.query(models.Conversation).filter(
         models.Conversation.id == conversation_id
     ).update({"updated_at": datetime.now(timezone.utc)})
@@ -201,7 +198,6 @@ async def send_message(
     db.commit()
     db.refresh(message)
 
-    # Send to other participants via WebSocket
     participants = db.query(models.ConversationParticipant).filter(
         and_(
             models.ConversationParticipant.conversation_id == conversation_id,

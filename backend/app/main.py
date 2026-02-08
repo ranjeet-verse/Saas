@@ -4,7 +4,7 @@ from .database import engine
 from .models import models
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import user, auth, me, projects, invite, messaging, files
+from .routers import user, auth, me, projects, invite, messaging, files, activity
 
 
 models.Base.metadata.create_all(bind=engine)
@@ -36,3 +36,4 @@ app.include_router(projects.router)
 app.include_router(invite.router)
 app.include_router(messaging.router)
 app.include_router(files.router)
+app.include_router(activity.router)

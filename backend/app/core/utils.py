@@ -106,6 +106,6 @@ def update_project_progress(db: Session, project_id: int):
     project.progress = progress
 
     # 4️⃣ Commit once
-    # db.commit()
+    db.commit()
 
 

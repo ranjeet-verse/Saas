@@ -5,7 +5,7 @@ from ..core import oauth2, utils
 from ..database import get_db
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 
 
 router = APIRouter(
@@ -303,3 +303,73 @@ async def remove_project_member(
     
     db.delete(member)
     db.commit()
+
+
+@router.get("/stats", response_model=schemas.ProjectStatsOut)
+async def get_project_stats(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user)
+):
+
+    total_projects = db.query(models.Project).filter(
+        models.Project.tenant_id == current_user.tenant_id,
+        models.Project.is_deleted == False
+    ).count()
+
+
+    active_tasks = db.query(models.Task).filter(
+        models.Task.tenant_id == current_user.tenant_id,
+        models.Task.status != "done",
+        models.Task.is_deleted == False
+    ).count()
+
+    avg_progress = db.query(func.avg(models.Project.progress)).filter(
+        models.Project.tenant_id == current_user.tenant_id,
+        models.Project.is_deleted == False
+    ).scalar() or 0.0
+
+    status_dist = db.query(
+        models.Task.status,
+        func.count(models.Task.id)
+    ).filter(
+        models.Task.tenant_id == current_user.tenant_id,
+        models.Task.is_deleted == False
+    ).group_by(models.Task.status).all()
+    
+    status_distribution = [schemas.StatusDistribution(status=s, count=c) for s, c in status_dist]
+
+    priority_dist = db.query(
+        models.Task.priority,
+        func.count(models.Task.id)
+    ).filter(
+        models.Task.tenant_id == current_user.tenant_id,
+        models.Task.is_deleted == False
+    ).group_by(models.Task.priority).all()
+    
+    priority_distribution = [schemas.PriorityDistribution(priority=p, count=c) for p, c in priority_dist]
+
+    trends = db.query(
+        func.strftime('%Y-%m', models.Project.created_at).label('month'),
+        func.count(models.Project.id)
+    ).filter(
+        models.Project.tenant_id == current_user.tenant_id,
+        models.Project.is_deleted == False
+    ).group_by('month').order_by('month').limit(6).all()
+    
+    monthly_trends = [schemas.MonthlyTrend(month=m, count=c) for m, c in trends]
+
+    # Top Projects
+    top_projects = db.query(models.Project).filter(
+        models.Project.tenant_id == current_user.tenant_id,
+        models.Project.is_deleted == False
+    ).order_by(models.Project.progress.desc()).limit(5).all()
+
+    return {
+        "total_projects": total_projects,
+        "active_tasks": active_tasks,
+        "avg_progress": float(avg_progress),
+        "status_distribution": status_distribution,
+        "priority_distribution": priority_distribution,
+        "monthly_trends": monthly_trends,
+        "top_projects": top_projects
+    }

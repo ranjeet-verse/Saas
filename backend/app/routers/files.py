@@ -1,11 +1,13 @@
 from ..core.s3 import s3_client, BUCKET
 import uuid
-from fastapi import APIRouter, HTTPException, File, UploadFile, Depends
+from fastapi import APIRouter, HTTPException, File, UploadFile, Depends, status
+from typing import List
 import os
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import models
 from ..core import oauth2
+from ..schema import schemas
 
 
 router = APIRouter(
@@ -183,3 +185,39 @@ async def get_shared_files(
 
     return files
 
+@router.get("/", response_model=List[schemas.FileOut])
+async def list_files(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user)
+):
+    files = db.query(models.File).filter(
+        models.File.tenant_id == current_user.tenant_id
+    ).order_by(models.File.uploaded_at.desc()).all()
+    return files
+
+
+@router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_file(
+    file_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user)
+):
+    file = db.query(models.File).filter(
+        models.File.id == file_id,
+        models.File.tenant_id == current_user.tenant_id
+    ).first()
+
+    if not file:
+        raise HTTPException(404, "File not found")
+
+    if file.user_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(403, "Not authorized to delete this file")
+
+    try:
+        s3_client.delete_object(Bucket=BUCKET, Key=file.s3_key)
+    except Exception as e:
+        print(f"Failed to delete from S3: {e}")
+
+    db.delete(file)
+    db.commit()
+    return

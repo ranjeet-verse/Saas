@@ -314,3 +314,35 @@ class CreateMessage(SecureBaseModel):
     
 #     class Config:
 #         from_attributes = True
+
+class FileOut(BaseModel):
+    id: int
+    filename: str
+    size: int
+    is_shared: bool
+    uploaded_at: datetime
+    user_id: int
+
+    class Config:
+        from_attributes = True
+
+class MonthlyTrend(BaseModel):
+    month: str
+    count: int
+
+class PriorityDistribution(BaseModel):
+    priority: str
+    count: int
+
+class StatusDistribution(BaseModel):
+    status: str
+    count: int
+
+class ProjectStatsOut(BaseModel):
+    total_projects: int
+    active_tasks: int
+    avg_progress: float
+    status_distribution: List[StatusDistribution]
+    priority_distribution: List[PriorityDistribution]
+    monthly_trends: List[MonthlyTrend]
+    top_projects: List[ProjectOut]

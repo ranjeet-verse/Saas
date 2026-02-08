@@ -47,19 +47,24 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
             user = getattr(request.state, "user", None)
 
-            log = models.Log(
-                tenant_id=getattr(user, "tenant_id", None),
-                user_id=getattr(user, "id", None),
-                action=f"{request.method} {request.url.path}",
-                category="SYSTEM",
-                message=f"Status {status_code} | {process_time}s",
-                ip_address=request.client.host if request.client else None,
-                user_agent=request.headers.get("user-agent")
-            )
+            try:
+                log = models.Log(
+                    tenant_id=getattr(user, "tenant_id", None),
+                    user_id=getattr(user, "id", None),
+                    action=f"{request.method} {request.url.path}",
+                    category="SYSTEM",
+                    message=f"Status {status_code} | {process_time}s",
+                    ip_address=request.client.host if request.client else None,
+                    user_agent=request.headers.get("user-agent")
+                )
 
-            db.add(log)
-            db.commit()
-            db.close()
+                db.add(log)
+                db.commit()
+            except Exception as e:
+                print(f"Logging error: {e}")
+                db.rollback()
+            finally:
+                db.close()
 
         return response
 
