@@ -106,17 +106,15 @@ async def create_project(
         tenant_id=current_user.tenant_id,
     )
 
-    db.add(new_project)
-    db.flush()
-
-    db.add(
+    # Use relationship to add the owner
+    new_project.members.append(
         models.ProjectMembers(
-            project_id=new_project.id,
             user_id=current_user.id,
-            role="owner",
+            role="owner"
         )
     )
 
+    db.add(new_project)
     db.commit()
     db.refresh(new_project)
     return new_project
@@ -392,11 +390,12 @@ async def get_project_stats(
     priority_distribution = [schemas.PriorityDistribution(priority=p, count=c) for p, c in priority_dist]
 
     trends = project_query.with_entities(
-        func.strftime('%Y-%m', models.Project.created_at).label('month'),
+        extract('month', models.Project.created_at).label('month_num'),
+        extract('year', models.Project.created_at).label('year_num'),
         func.count(models.Project.id)
-    ).group_by('month').order_by('month').limit(6).all()
+    ).group_by('year_num', 'month_num').order_by('year_num', 'month_num').limit(6).all()
     
-    monthly_trends = [schemas.MonthlyTrend(month=m, count=c) for m, c in trends]
+    monthly_trends = [schemas.MonthlyTrend(month=f"{int(y)}-{int(m):02d}", count=c) for m, y, c in trends]
 
     # Top Projects
     top_projects = project_query.order_by(models.Project.progress.desc()).limit(5).all()

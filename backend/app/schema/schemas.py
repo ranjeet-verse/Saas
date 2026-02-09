@@ -188,6 +188,8 @@ class TaskCreate(SecureBaseModel):
     description: Optional[str] = None
     status: str = Field(default="todo")
     priority: str = Field(default="medium") 
+    due_date: Optional[datetime] = None
+    assigned_to: Optional[int] = None
 
     @field_validator("title")
     @classmethod
@@ -211,7 +213,10 @@ class TaskOut(SecureBaseModel):
     status: str
     priority: str
     project_id: int
+    assigned_to: Optional[int] = None
+    due_date: Optional[datetime] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
 
 
 class CreateInvite(SecureBaseModel):
@@ -336,10 +341,12 @@ class MonthlyTrend(BaseModel):
 class PriorityDistribution(BaseModel):
     priority: str
     count: int
+    percentage: float
 
 class StatusDistribution(BaseModel):
     status: str
     count: int
+    percentage: float
 
 class ProjectStatsOut(BaseModel):
     total_projects: int

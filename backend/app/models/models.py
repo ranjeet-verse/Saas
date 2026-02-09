@@ -85,9 +85,13 @@ class Task(Base):
     priority = Column(String, default="medium") 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     is_deleted = Column(Boolean, default=False)
+    due_date = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False, index=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
-    
+    assigned_to = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    assignee = relationship("User")
 
     tenant = relationship("Tenant", back_populates="tasks")
     project = relationship("Project", back_populates="tasks")

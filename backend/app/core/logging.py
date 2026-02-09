@@ -47,10 +47,21 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
             user = getattr(request.state, "user", None)
 
+            # Safely capture user ID and tenant ID BEFORE any potential session closure
+            user_id = None
+            tenant_id = None
+            if user:
+                try:
+                    user_id = user.id
+                    tenant_id = user.tenant_id
+                except Exception:
+                    # If already detached, we can't do much here 
+                    pass
+
             try:
                 log = models.Log(
-                    tenant_id=getattr(user, "tenant_id", None),
-                    user_id=getattr(user, "id", None),
+                    tenant_id=tenant_id,
+                    user_id=user_id,
                     action=f"{request.method} {request.url.path}",
                     category="SYSTEM",
                     message=f"Status {status_code} | {process_time}s",
