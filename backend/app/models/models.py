@@ -63,6 +63,9 @@ class Project(Base):
     progress = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     is_deleted = Column(Boolean, default=False)
+    status = Column(String, default="active")
+    deadline = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     tenant_id = Column(Integer, ForeignKey("tenant.id"), nullable=False, index=True)
     
 

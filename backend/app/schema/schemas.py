@@ -349,3 +349,79 @@ class ProjectStatsOut(BaseModel):
     priority_distribution: List[PriorityDistribution]
     monthly_trends: List[MonthlyTrend]
     top_projects: List[ProjectOut]
+
+
+
+class DashboardMetrics(BaseModel):
+    total_projects: int
+    active_projects: int
+    completed_projects: int
+    total_tasks: int
+    completed_tasks: int
+    pending_tasks: int
+    overdue_tasks: int
+    total_team_members: int
+    completion_rate: float
+    average_project_progress: float
+
+    class Config:
+        from_attributes = True
+
+
+class ProjectAnalytics(BaseModel):
+    project_id: int
+    project_name: str
+    total_tasks: int
+    completed_tasks: int
+    in_progress_tasks: int
+    pending_tasks: int
+    overdue_tasks: int
+    completion_rate: float
+    progress: int
+    team_size: int
+    created_at: datetime
+    deadline: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
+class UserProductivity(BaseModel):
+    user_id: int
+    user_name: str
+    email: str
+    assigned_tasks: int
+    completed_tasks: int
+    in_progress_tasks: int
+    completion_rate: float
+    overdue_tasks: int
+    avg_completion_time_days: Optional[float]
+
+    class Config:
+        from_attributes = True
+
+
+class TimeSeriesData(BaseModel):
+    date: str
+    value: int
+
+    class Config:
+        from_attributes = True
+
+
+class TaskStatusDistribution(BaseModel):
+    status: str
+    count: int
+    percentage: float
+
+    class Config:
+        from_attributes = True
+
+
+class PriorityDistribution(BaseModel):
+    priority: str
+    count: int
+    percentage: float
+
+    class Config:
+        from_attributes = True
