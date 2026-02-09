@@ -101,15 +101,21 @@ const ProjectDetail = () => {
     const [draggedTask, setDraggedTask] = useState(null);
     const [deleteModal, setDeleteModal] = useState({ isOpen: false, taskId: null });
     const [taskModal, setTaskModal] = useState({ isOpen: false, status: 'todo' });
+    const [members, setMembers] = useState([]);
+    const [tenantUsers, setTenantUsers] = useState([]);
+    const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
+    const [newMember, setNewMember] = useState({ userId: '', role: 'viewer' });
 
     const fetchData = useCallback(async () => {
         try {
-            const [projRes, tasksRes] = await Promise.all([
+            const [projRes, tasksRes, membersRes] = await Promise.all([
                 api.get(`/projects/${id}`),
-                api.get(`/projects/${id}/task`)
+                api.get(`/projects/${id}/task`),
+                api.get(`/projects/${id}/members`)
             ]);
             setProject(projRes.data);
             setTasks(tasksRes.data);
+            setMembers(membersRes.data);
         } catch (err) {
             addNotification('Failed to load project details', 'error');
             navigate('/projects');
@@ -117,6 +123,15 @@ const ProjectDetail = () => {
             setLoading(false);
         }
     }, [id, navigate, addNotification]);
+
+    const fetchTenantUsers = async () => {
+        try {
+            const res = await api.get('/user/');
+            setTenantUsers(res.data);
+        } catch (err) {
+            addNotification('Failed to load users', 'error');
+        }
+    };
 
     useEffect(() => {
         fetchData();
@@ -167,6 +182,35 @@ const ProjectDetail = () => {
         }
     };
 
+    const handleAddMember = async (e) => {
+        e.preventDefault();
+        try {
+            await api.post(`/projects/${id}/members`, {
+                user_id: parseInt(newMember.userId),
+                role: newMember.role
+            });
+            addNotification('Member added to project', 'success');
+            setIsAddMemberOpen(false);
+            setNewMember({ userId: '', role: 'viewer' });
+            fetchData();
+        } catch (err) {
+            addNotification(err.response?.data?.detail || 'Failed to add member', 'error');
+        }
+    };
+
+    const handleRemoveMember = async (memberId) => {
+        try {
+            await api.delete(`/projects/${id}/members/${memberId}`);
+            setMembers(members.filter(m => m.id !== memberId));
+            addNotification('Member removed', 'success');
+        } catch (err) {
+            addNotification(err.response?.data?.detail || 'Failed to remove member', 'error');
+        }
+    };
+
+    const isAdminOrOwner = project?.my_role === 'admin' || project?.my_role === 'owner';
+    const canEdit = isAdminOrOwner || project?.my_role === 'editor';
+
     const onDragStart = (task) => {
         setDraggedTask(task);
     };
@@ -202,12 +246,14 @@ const ProjectDetail = () => {
                 </div>
 
                 <div className="flex items-center gap-4 text-sm">
-                    <Button
-                        onClick={() => setTaskModal({ isOpen: true, status: 'todo' })}
-                        className="shadow-md shadow-indigo-100"
-                    >
-                        + Create Task
-                    </Button>
+                    {canEdit && (
+                        <Button
+                            onClick={() => setTaskModal({ isOpen: true, status: 'todo' })}
+                            className="shadow-md shadow-indigo-100"
+                        >
+                            + Create Task
+                        </Button>
+                    )}
                     <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm min-w-[120px]">
                         <p className="text-gray-400 uppercase text-[10px] font-extrabold tracking-widest mb-1">Completion</p>
                         <p className="text-2xl font-black text-indigo-600">
@@ -229,8 +275,8 @@ const ProjectDetail = () => {
                                 tasks={tasks.filter(t => t.status === col.status)}
                                 onDrop={onDrop}
                                 onDragStart={onDragStart}
-                                onDelete={(taskId) => setDeleteModal({ isOpen: true, taskId })}
-                                onUpdate={(status) => setTaskModal({ isOpen: true, status })}
+                                onDelete={isAdminOrOwner ? (taskId) => setDeleteModal({ isOpen: true, taskId }) : null}
+                                onUpdate={canEdit ? (status) => setTaskModal({ isOpen: true, status }) : null}
                             />
                         ))}
                     </div>
@@ -238,33 +284,73 @@ const ProjectDetail = () => {
 
                 {/* Sidebar */}
                 <div className="space-y-6">
-                    <Card title="Quick Add">
-                        <form onSubmit={(e) => { e.preventDefault(); handleAddTask({ ...newTask, status: 'todo' }); }} className="space-y-4">
-                            <Input
-                                placeholder="Task title..."
-                                value={newTask.title}
-                                onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                                className="mb-0"
-                            />
-                            <textarea
-                                placeholder="Description (optional)"
-                                className="w-full text-sm px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 h-24"
-                                value={newTask.description}
-                                onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
-                            />
-                            <select
-                                className="w-full text-sm px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                value={newTask.priority}
-                                onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}
-                            >
-                                <option value="low">Low Priority</option>
-                                <option value="medium">Medium Priority</option>
-                                <option value="high">High Priority</option>
-                            </select>
-                            <Button type="submit" className="w-full" disabled={!newTask.title.trim()}>
-                                Add Task
-                            </Button>
-                        </form>
+                    {canEdit && (
+                        <Card title="Quick Add">
+                            <form onSubmit={(e) => { e.preventDefault(); handleAddTask({ ...newTask, status: 'todo' }); }} className="space-y-4">
+                                <Input
+                                    placeholder="Task title..."
+                                    value={newTask.title}
+                                    onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                                    className="mb-0"
+                                />
+                                <textarea
+                                    placeholder="Description (optional)"
+                                    className="w-full text-sm px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 h-24"
+                                    value={newTask.description}
+                                    onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
+                                />
+                                <select
+                                    className="w-full text-sm px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    value={newTask.priority}
+                                    onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}
+                                >
+                                    <option value="low">Low Priority</option>
+                                    <option value="medium">Medium Priority</option>
+                                    <option value="high">High Priority</option>
+                                </select>
+                                <Button type="submit" className="w-full" disabled={!newTask.title.trim()}>
+                                    Add Task
+                                </Button>
+                            </form>
+                        </Card>
+                    )}
+
+                    <Card title="Project Team">
+                        <div className="space-y-4">
+                            {members.map(member => (
+                                <div key={member.id} className="flex justify-between items-center group">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs uppercase">
+                                            {member.user_name?.charAt(0)}
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-bold text-gray-800">{member.user_name}</p>
+                                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{member.role}</p>
+                                        </div>
+                                    </div>
+                                    {isAdminOrOwner && member.role !== 'owner' && (
+                                        <button
+                                            onClick={() => handleRemoveMember(member.id)}
+                                            className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all text-lg"
+                                            title="Remove Member"
+                                        >
+                                            ×
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                            {isAdminOrOwner && (
+                                <button
+                                    onClick={() => {
+                                        setIsAddMemberOpen(true);
+                                        fetchTenantUsers();
+                                    }}
+                                    className="w-full py-2 border-2 border-dashed border-gray-200 rounded-xl text-gray-400 text-xs font-bold uppercase hover:border-indigo-200 hover:text-indigo-600 transition-all"
+                                >
+                                    + Add Member
+                                </button>
+                            )}
+                        </div>
                     </Card>
 
                     <Card title="Project Stats">
@@ -309,6 +395,46 @@ const ProjectDetail = () => {
                 onTaskCreated={handleAddTask}
                 initialStatus={taskModal.status}
             />
+
+            {/* Add Member Modal */}
+            {isAddMemberOpen && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <Card title="Add Project Member" className="w-full max-w-md shadow-2xl animate-scale-in">
+                        <form onSubmit={handleAddMember} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Select User</label>
+                                <select
+                                    required
+                                    className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                                    value={newMember.userId}
+                                    onChange={(e) => setNewMember({ ...newMember, userId: e.target.value })}
+                                >
+                                    <option value="">Choose a user...</option>
+                                    {tenantUsers.filter(u => !members.some(m => m.user_id === u.id)).map(user => (
+                                        <option key={user.id} value={user.id}>{user.name} ({user.email})</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Project Role</label>
+                                <select
+                                    className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                                    value={newMember.role}
+                                    onChange={(e) => setNewMember({ ...newMember, role: e.target.value })}
+                                >
+                                    <option value="viewer">Viewer</option>
+                                    <option value="editor">Editor</option>
+                                    <option value="owner">Owner</option>
+                                </select>
+                            </div>
+                            <div className="flex justify-end gap-3 mt-6">
+                                <Button variant="secondary" onClick={() => setIsAddMemberOpen(false)}>Cancel</Button>
+                                <Button type="submit" disabled={!newMember.userId}>Add Member</Button>
+                            </div>
+                        </form>
+                    </Card>
+                </div>
+            )}
         </div>
     );
 };

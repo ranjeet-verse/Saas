@@ -23,15 +23,31 @@ async def see_projects(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user),
 ):
-    query = (
-        db.query(models.Project)
-        .join(models.ProjectMembers)
-        .filter(
-            models.ProjectMembers.user_id == current_user.id,
-            models.Project.tenant_id == current_user.tenant_id,
-            models.Project.is_deleted.is_(False),
+    if current_user.role == "admin":
+        # Admin sees everything in their tenant
+        query = (
+            db.query(models.Project, models.ProjectMembers.role.label("my_role"))
+            .outerjoin(
+                models.ProjectMembers,
+                (models.ProjectMembers.project_id == models.Project.id) & 
+                (models.ProjectMembers.user_id == current_user.id)
+            )
+            .filter(
+                models.Project.tenant_id == current_user.tenant_id,
+                models.Project.is_deleted.is_(False),
+            )
         )
-    )
+    else:
+        # Regular user sees only projects they are members of
+        query = (
+            db.query(models.Project, models.ProjectMembers.role.label("my_role"))
+            .join(models.ProjectMembers)
+            .filter(
+                models.ProjectMembers.user_id == current_user.id,
+                models.Project.tenant_id == current_user.tenant_id,
+                models.Project.is_deleted.is_(False),
+            )
+        )
 
     if search:
         query = query.filter(
@@ -41,18 +57,42 @@ async def see_projects(
             )
         )
 
-    return query.offset(offset).limit(limit).all()
+    results = query.offset(offset).limit(limit).all()
+    
+    projects = []
+    for project, my_role in results:
+        # Construct the response object with role info
+        p_out = schemas.ProjectOut.from_orm(project)
+        p_out.my_role = my_role if my_role else ("admin" if current_user.role == "admin" else None)
+        projects.append(p_out)
+        
+    return projects
 
 
 @router.get("/{project_id}", response_model=schemas.ProjectOut)
 async def see_project(
     project_id: int,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user),
     project_obj = Depends(utils.require_project_access(["owner", "editor", "viewer"], allow_admin=True)),
 ):
-    return db.query(models.Project).filter(
-        models.Project.id == project_id
-    ).first()
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    
+    # Identify user role
+    my_role = None
+    if current_user.role == "admin":
+        my_role = "admin"
+    else:
+        member = db.query(models.ProjectMembers).filter(
+            models.ProjectMembers.project_id == project_id,
+            models.ProjectMembers.user_id == current_user.id
+        ).first()
+        if member:
+            my_role = member.role
+
+    p_out = schemas.ProjectOut.from_orm(project)
+    p_out.my_role = my_role
+    return p_out
 
 
 @router.post("/", response_model=schemas.ProjectOut, status_code=status.HTTP_201_CREATED)
@@ -289,7 +329,6 @@ async def remove_project_member(
     if not member:
         raise HTTPException(status_code=404, detail="Member not found")
     
-    # Don't allow removing the last owner
     if member.role == "owner":
         owner_count = db.query(models.ProjectMembers).filter(
             models.ProjectMembers.project_id == project_id,
@@ -310,59 +349,57 @@ async def get_project_stats(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user)
 ):
-
-    total_projects = db.query(models.Project).filter(
+    # Base queries for projects and tasks
+    project_query = db.query(models.Project).filter(
         models.Project.tenant_id == current_user.tenant_id,
         models.Project.is_deleted == False
-    ).count()
-
-
-    active_tasks = db.query(models.Task).filter(
+    )
+    
+    task_query = db.query(models.Task).filter(
         models.Task.tenant_id == current_user.tenant_id,
-        models.Task.status != "done",
         models.Task.is_deleted == False
-    ).count()
+    )
 
-    avg_progress = db.query(func.avg(models.Project.progress)).filter(
-        models.Project.tenant_id == current_user.tenant_id,
-        models.Project.is_deleted == False
-    ).scalar() or 0.0
+    # Filter by membership if not admin
+    if current_user.role != "admin":
+        project_query = project_query.join(models.ProjectMembers).filter(
+            models.ProjectMembers.user_id == current_user.id
+        )
+        task_query = task_query.join(
+            models.ProjectMembers, 
+            models.Task.project_id == models.ProjectMembers.project_id
+        ).filter(
+            models.ProjectMembers.user_id == current_user.id
+        )
 
-    status_dist = db.query(
+    total_projects = project_query.count()
+    active_tasks = task_query.filter(models.Task.status != "done").count()
+
+    avg_progress = project_query.with_entities(func.avg(models.Project.progress)).scalar() or 0.0
+
+    status_dist = task_query.with_entities(
         models.Task.status,
         func.count(models.Task.id)
-    ).filter(
-        models.Task.tenant_id == current_user.tenant_id,
-        models.Task.is_deleted == False
     ).group_by(models.Task.status).all()
     
     status_distribution = [schemas.StatusDistribution(status=s, count=c) for s, c in status_dist]
 
-    priority_dist = db.query(
+    priority_dist = task_query.with_entities(
         models.Task.priority,
         func.count(models.Task.id)
-    ).filter(
-        models.Task.tenant_id == current_user.tenant_id,
-        models.Task.is_deleted == False
     ).group_by(models.Task.priority).all()
     
     priority_distribution = [schemas.PriorityDistribution(priority=p, count=c) for p, c in priority_dist]
 
-    trends = db.query(
+    trends = project_query.with_entities(
         func.strftime('%Y-%m', models.Project.created_at).label('month'),
         func.count(models.Project.id)
-    ).filter(
-        models.Project.tenant_id == current_user.tenant_id,
-        models.Project.is_deleted == False
     ).group_by('month').order_by('month').limit(6).all()
     
     monthly_trends = [schemas.MonthlyTrend(month=m, count=c) for m, c in trends]
 
     # Top Projects
-    top_projects = db.query(models.Project).filter(
-        models.Project.tenant_id == current_user.tenant_id,
-        models.Project.is_deleted == False
-    ).order_by(models.Project.progress.desc()).limit(5).all()
+    top_projects = project_query.order_by(models.Project.progress.desc()).limit(5).all()
 
     return {
         "total_projects": total_projects,

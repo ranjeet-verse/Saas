@@ -17,8 +17,10 @@ const Layout = () => {
         { label: 'Projects', path: '/projects' },
         { label: 'Files', path: '/files' },
         { label: 'Chat', path: '/chat' },
-        { label: 'Organization', path: '/organization' },
-        { label: 'Invite', path: '/invite' },
+        ...(user.role === 'admin' || user.role === 'owner' ? [
+            { label: 'Users', path: '/users' },
+            { label: 'Organization', path: '/organization' }
+        ] : []),
     ];
 
     return (
@@ -55,7 +57,7 @@ const Layout = () => {
                         </div>
                         <div className={`${!sidebarOpen && 'hidden'} overflow-hidden`}>
                             <p className="text-sm font-bold truncate">{user.name}</p>
-                            <p className="text-[10px] text-indigo-400 font-bold uppercase truncate">Administrator</p>
+                            <p className="text-[10px] text-indigo-400 font-bold uppercase truncate">{user.role}</p>
                         </div>
                     </div>
                     <button

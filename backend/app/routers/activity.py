@@ -43,7 +43,7 @@ async def get_recent_activity(
 
     activities = []
     for log in logs:
-        user_name = log.user_id # Temporary, should join user
+        user_name = log.user_id
         action_parts = log.action.split(' ')
         method = action_parts[0]
         path = action_parts[1]

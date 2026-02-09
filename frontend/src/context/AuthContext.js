@@ -71,6 +71,22 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
+    const acceptInvite = async (token, userData) => {
+        try {
+            const response = await api.post(`/invite/accept/${token}`, userData);
+            const { access_token } = response.data;
+
+            localStorage.setItem('token', access_token);
+            setToken(access_token);
+            setUser(response.data.user);
+
+            return { success: true };
+        } catch (error) {
+            console.error("Invite acceptance failed", error);
+            return { success: false, error: error.response?.data?.detail || "Failed to accept invite" };
+        }
+    };
+
     const register = async (userData) => {
         try {
             await api.post('/auth/admin', userData);
@@ -101,7 +117,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, token, login, logout, register, loading }}>
+        <AuthContext.Provider value={{ user, token, login, logout, register, acceptInvite, loading }}>
             {children}
         </AuthContext.Provider>
     );

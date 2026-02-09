@@ -13,6 +13,8 @@ import Invite from './pages/Invite';
 import Files from './pages/Files';
 import Analytics from './pages/Analytics';
 import Organization from './pages/Organization';
+import AcceptInvite from './pages/AcceptInvite';
+import Users from './pages/Users';
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -26,6 +28,18 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
+const AdminRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+
+  if (loading) return <div className="h-screen flex items-center justify-center"><LoadingSpinner size="lg" /></div>;
+
+  if (!user || (user.role !== 'admin' && user.role !== 'owner')) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+};
+
 
 
 function App() {
@@ -33,6 +47,7 @@ function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/accept-invite" element={<AcceptInvite />} />
 
       <Route path="/" element={
         <ProtectedRoute>
@@ -45,8 +60,16 @@ function App() {
         <Route path="projects/:id" element={<ProjectDetail />} />
         <Route path="files" element={<Files />} />
         <Route path="chat" element={<Chat />} />
-        <Route path="invite" element={<Invite />} />
-        <Route path="organization" element={<Organization />} />
+        <Route path="users" element={
+          <AdminRoute>
+            <Users />
+          </AdminRoute>
+        } />
+        <Route path="organization" element={
+          <AdminRoute>
+            <Organization />
+          </AdminRoute>
+        } />
       </Route>
     </Routes>
   );

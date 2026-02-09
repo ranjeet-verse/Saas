@@ -43,6 +43,7 @@ MAX_FILE_SIZE = 50 * 1024 * 1024
 @router.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
+    is_shared: bool = False,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user)
 ):
@@ -86,7 +87,8 @@ async def upload_file(
             user_id=current_user.id,
             filename=file.filename,
             s3_key=key,
-            size=size
+            size=size,
+            is_shared=is_shared
         )
 
         db.add(file_obj)
@@ -118,9 +120,13 @@ async def download(file_id: int,
     
     if not (
         file.user_id == current_user.id or
-        file.is_shared is True
+        file.is_shared or
+        current_user.role in ["admin", "owner"]
     ):
-        raise HTTPException(403, "Access denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail=f"Access denied: You do not own this file and it is not shared. (User: {current_user.id}, Owner: {file.user_id})"
+        )
 
 
     

@@ -143,6 +143,8 @@ class ProjectOut(SecureBaseModel):
     description: str
     progress: int
     created_at: datetime
+    my_role: Optional[str] = None
+
 
 class ProjectMemberOut(BaseModel):
     user_id: int

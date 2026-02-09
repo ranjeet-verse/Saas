@@ -135,18 +135,27 @@ const Projects = () => {
                             className="group animate-scale-in"
                         >
                             <div className="flex justify-between items-start">
-                                <h4 className="font-bold text-lg text-gray-900 group-hover:text-indigo-600 transition-colors uppercase tracking-tight truncate flex-1 pr-4">{project.name}</h4>
+                                <div className="flex-1 pr-4">
+                                    <h4 className="font-bold text-lg text-gray-900 group-hover:text-indigo-600 transition-colors uppercase tracking-tight truncate flex-1">{project.name}</h4>
+                                    {project.my_role && (
+                                        <span className="text-[9px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-50 px-2 py-0.5 rounded-full mt-1 inline-block">
+                                            {project.my_role}
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setTaskModal({ isOpen: true, projectId: project.id });
-                                        }}
-                                        className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
-                                        title="Add Task"
-                                    >
-                                        +
-                                    </button>
+                                    {['owner', 'editor', 'admin'].includes(project.my_role) && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setTaskModal({ isOpen: true, projectId: project.id });
+                                            }}
+                                            className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
+                                            title="Add Task"
+                                        >
+                                            +
+                                        </button>
+                                    )}
                                     <div className={`w-3 h-3 rounded-full ${project.progress === 100 ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]' : 'bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.4)]'}`}></div>
                                 </div>
                             </div>
@@ -187,6 +196,11 @@ const Projects = () => {
                                 >
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="text-sm font-bold text-gray-900">{project.name}</div>
+                                        {project.my_role && (
+                                            <span className="text-[9px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-50 px-2 py-0.5 rounded-full mt-1 inline-block">
+                                                {project.my_role}
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 max-w-[400px]">
                                         <div className="text-sm text-gray-500 truncate">{project.description}</div>
