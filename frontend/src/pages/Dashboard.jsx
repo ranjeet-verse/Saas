@@ -5,10 +5,12 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 import Button from '../components/common/Button';
 import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../context/NotificationContext';
+import { useAuth } from '../context/AuthContext';
 import CreateTaskModal from '../components/projects/CreateTaskModal';
 import { getInitials, getAvatarColor, formatDate } from '../utils/helpers';
 
 const Dashboard = () => {
+    const { user } = useAuth();
     const [projects, setProjects] = useState([]);
     const [loading, setLoading] = useState(true);
     const [statsData, setStatsData] = useState(null);
@@ -17,6 +19,13 @@ const Dashboard = () => {
     const [taskModal, setTaskModal] = useState({ isOpen: false, projectId: null });
     const navigate = useNavigate();
     const { addNotification } = useNotification();
+
+    const greeting = useMemo(() => {
+        const hour = new Date().getHours();
+        if (hour < 12) return 'Good morning';
+        if (hour < 18) return 'Good afternoon';
+        return 'Good evening';
+    }, []);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -62,10 +71,10 @@ const Dashboard = () => {
     if (loading) return <LoadingSpinner className="mt-20" />;
 
     const stats = [
-        { title: 'Total Projects', value: statsData?.total_projects || 0, trend: '+0%', color: 'from-indigo-500 to-blue-600', icon: '📁' },
-        { title: 'Active Tasks', value: statsData?.active_tasks || 0, trend: '+0%', color: 'from-purple-500 to-indigo-600', icon: '✅' },
-        { title: 'Messages', value: unreadCount, trend: 'New', color: 'from-pink-500 to-rose-600', icon: '💬' },
-        { title: 'Avg Progress', value: `${Math.round(statsData?.avg_progress || 0)}%`, trend: '+0%', color: 'from-orange-500 to-amber-600', icon: '📈' }
+        { title: 'Total Projects', value: statsData?.total_projects || 0, color: 'from-indigo-500 to-blue-600', icon: '📁' },
+        { title: 'Active Tasks', value: statsData?.active_tasks || 0, color: 'from-purple-500 to-indigo-600', icon: '✅' },
+        { title: 'Messages', value: unreadCount, trend: unreadCount > 0 ? 'New' : '', color: 'from-pink-500 to-rose-600', icon: '💬' },
+        { title: 'Avg Progress', value: `${Math.round(statsData?.avg_progress || 0)}%`, color: 'from-orange-500 to-amber-600', icon: '📈' }
     ];
 
     return (
@@ -74,7 +83,7 @@ const Dashboard = () => {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Overview</h1>
-                    <p className="text-gray-500 mt-1">Good evening, Ranjeet. Here's what's happening today.</p>
+                    <p className="text-gray-500 mt-1">{greeting}, {user?.name || 'Ranjeet'}. Here's what's happening today.</p>
                 </div>
                 <div className="flex gap-3">
                     <Button variant="secondary" onClick={() => navigate('/analytics')}>View Reports</Button>
@@ -91,9 +100,11 @@ const Dashboard = () => {
                             <div>
                                 <p className="text-sm font-bold text-gray-400 uppercase tracking-wider">{stat.title}</p>
                                 <h3 className="text-3xl font-black text-gray-900 mt-1">{stat.value}</h3>
-                                <p className={`text-xs font-bold mt-2 ${stat.trend.startsWith('+') ? 'text-green-500' : 'text-red-500'}`}>
-                                    {stat.trend} <span className="text-gray-400 font-normal ml-1">since last week</span>
-                                </p>
+                                {stat.trend && (
+                                    <p className={`text-xs font-bold mt-2 text-green-500`}>
+                                        {stat.trend}
+                                    </p>
+                                )}
                             </div>
                             <span className="text-2xl">{stat.icon}</span>
                         </div>

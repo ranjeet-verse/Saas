@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List
 from ..database import get_db
 from ..models import models
@@ -28,13 +29,20 @@ async def get_recent_activity(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user)
 ):
-    logs = (
-        db.query(models.Log)
+    # Join with User to get names in one go
+    results = (
+        db.query(models.Log, models.User.name)
         .outerjoin(models.User, models.Log.user_id == models.User.id)
         .filter(
             models.Log.tenant_id == current_user.tenant_id,
-            models.Log.category == "SYSTEM",
-            models.Log.action.regexp_match('POST|PUT|DELETE')
+            models.Log.category == "SYSTEM"
+        )
+        .filter(
+            or_(
+                models.Log.action.like('POST%'),
+                models.Log.action.like('PUT%'),
+                models.Log.action.like('DELETE%')
+            )
         )
         .order_by(models.Log.created_at.desc())
         .limit(10)
@@ -42,11 +50,10 @@ async def get_recent_activity(
     )
 
     activities = []
-    for log in logs:
-        user_name = log.user_id
+    for log, user_name in results:
         action_parts = log.action.split(' ')
-        method = action_parts[0]
-        path = action_parts[1]
+        method = action_parts[0] if action_parts else "UNKNOWN"
+        path = action_parts[1] if len(action_parts) > 1 else ""
         
         message = f"Performed {method} on {path}"
         if "/projects" in path and method == "POST":
@@ -60,7 +67,7 @@ async def get_recent_activity(
 
         activities.append({
             "id": log.id,
-            "user_name": db.query(models.User).filter(models.User.id == log.user_id).first().name if log.user_id else "System",
+            "user_name": user_name or "System",
             "action": method,
             "message": message,
             "created_at": log.created_at

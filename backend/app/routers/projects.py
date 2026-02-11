@@ -5,7 +5,7 @@ from ..core import oauth2, utils
 from ..database import get_db
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from sqlalchemy import or_, func
+from sqlalchemy import or_, func, extract
 
 
 router = APIRouter(
@@ -380,14 +380,28 @@ async def get_project_stats(
         func.count(models.Task.id)
     ).group_by(models.Task.status).all()
     
-    status_distribution = [schemas.StatusDistribution(status=s, count=c) for s, c in status_dist]
+    status_distribution = [
+        schemas.StatusDistribution(
+            status=s, 
+            count=c, 
+            percentage=(c / total_projects * 100) if total_projects > 0 else 0
+        ) for s, c in status_dist
+    ]
 
     priority_dist = task_query.with_entities(
         models.Task.priority,
         func.count(models.Task.id)
     ).group_by(models.Task.priority).all()
     
-    priority_distribution = [schemas.PriorityDistribution(priority=p, count=c) for p, c in priority_dist]
+    # Calculate tasks total for priority distribution
+    total_tasks = sum(c for s, c in status_dist)
+    priority_distribution = [
+        schemas.PriorityDistribution(
+            priority=p, 
+            count=c, 
+            percentage=(c / total_tasks * 100) if total_tasks > 0 else 0
+        ) for p, c in priority_dist
+    ]
 
     trends = project_query.with_entities(
         extract('month', models.Project.created_at).label('month_num'),

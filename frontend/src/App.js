@@ -2,6 +2,7 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import Layout from './components/layout/Layout';
+import Home from './pages/Home';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
@@ -45,11 +46,12 @@ const AdminRoute = ({ children }) => {
 function App() {
   return (
     <Routes>
+      <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/accept-invite" element={<AcceptInvite />} />
 
-      <Route path="/" element={
+      <Route path="/app" element={
         <ProtectedRoute>
           <Layout />
         </ProtectedRoute>

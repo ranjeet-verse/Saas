@@ -12,14 +12,14 @@ const Layout = () => {
     if (!user) return <Outlet />;
 
     const navItems = [
-        { label: 'Dashboard', path: '/' },
-        { label: 'Analytics', path: '/analytics' },
-        { label: 'Projects', path: '/projects' },
-        { label: 'Files', path: '/files' },
-        { label: 'Chat', path: '/chat' },
+        { label: 'Dashboard', path: '/app' },
+        { label: 'Analytics', path: '/app/analytics' },
+        { label: 'Projects', path: '/app/projects' },
+        { label: 'Files', path: '/app/files' },
+        { label: 'Chat', path: '/app/chat' },
         ...(user.role === 'admin' || user.role === 'owner' ? [
-            { label: 'Users', path: '/users' },
-            { label: 'Organization', path: '/organization' }
+            { label: 'Users', path: '/app/users' },
+            { label: 'Organization', path: '/app/organization' }
         ] : []),
     ];
 
